@@ -738,7 +738,7 @@ const FS_NODES = {
   "file-photo": {
     id: "file-photo",
     name: "photo.jpg",
-    icon: ICON_PLACES + "folder-pictures.png",
+    icon: "assets/thumbnails/photo.jpg",
     type: "file",
     size: "3.4 MB",
     modified: "10 Jul 2026",

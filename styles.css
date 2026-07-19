@@ -1667,6 +1667,18 @@ html[data-night-light="on"] .night-light-overlay::after {
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.2));
 }
 
+/* Photo / document previews (not symbolic icons) */
+.view-grid .file-item img[src*="thumbnails/"] {
+  object-fit: cover;
+  border-radius: 6px;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.25));
+}
+
+.view-list .file-item img[src*="thumbnails/"] {
+  object-fit: cover;
+  border-radius: 3px;
+}
+
 .view-grid .file-item-name {
   font-size: 12px;
   line-height: 1.3;
