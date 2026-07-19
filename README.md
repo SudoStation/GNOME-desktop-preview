@@ -1,20 +1,15 @@
 ![GNOME Desktop Preview](docs/Screenshot%20From%202026-07-18%2018-25-22.png)
+<div align="center">
+<a href="https://sudostation.github.io/GNOME-desktop-preview/">View interactive preview</a>
+</div>
 
 # GNOME Desktop Preview
 
-Interactive browser mockup of a **GNOME Shell** desktop. Static HTML/CSS/JS — no backend.
+Interactive browser mockup of a GNOME Shell desktop. Static HTML/CSS/JS — no backend.
 
-### Layouts
+### View online
+[https://sudostation.github.io/GNOME-desktop-preview/](https://sudostation.github.io/GNOME-desktop-preview/)
 
-Use the semi-transparent **Layout** control in the center of the screen (solid on hover):
-
-| Layout | Description |
-|--------|-------------|
-| **Dash to Dock** | Floating bottom-center dock (default) |
-| **Left panel** | Full-height left side launcher panel — no floating dock |
-
-Chosen layout is remembered in `localStorage`.
-
-### Run locally
-
-Open `index.html` in a browser.
+### or run locally
+1. Download the zip folder.
+2. Open `index.html` in a browser.
