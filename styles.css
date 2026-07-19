@@ -1,0 +1,1855 @@
+/* GNOME Shell desktop preview (Dash to Dock / left panel)
+   Inspired by Adwaita / GNOME 46+ aesthetics */
+
+:root,
+html[data-theme="dark"] {
+  --panel-height: 32px;
+  --side-panel-width: 56px;
+  --chrome-left: 0px;
+  --chrome-bottom: 72px;
+  /* Top panel always dark (GNOME Shell) */
+  --panel-bg: rgba(0, 0, 0, 0.55);
+  --panel-fg: #f6f5f4;
+  --panel-fg-dim: rgba(246, 245, 244, 0.75);
+  --panel-sym-filter: invert(1) brightness(1.2);
+  --accent: #3584e4;
+  --accent-hover: #62a0ea;
+  /* Popovers / QS surfaces */
+  --surface: rgba(36, 36, 36, 0.94);
+  --surface-solid: #242424;
+  --surface-raised: rgba(48, 48, 48, 0.97);
+  --surface-fg: #f6f5f4;
+  --surface-fg-dim: rgba(246, 245, 244, 0.75);
+  --surface-muted: rgba(255, 255, 255, 0.1);
+  --surface-muted-hover: rgba(255, 255, 255, 0.14);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --dock-icon: 34px;
+  --dock-pad: 5px;
+  --font: "Cantarell", "Inter", "Segoe UI", system-ui, sans-serif;
+  --transition-fast: 120ms ease;
+  --transition: 180ms ease;
+  --dock-bg: rgba(20, 20, 20, 0.72);
+  --dock-border: rgba(255, 255, 255, 0.1);
+  --hover-bg: rgba(255, 255, 255, 0.12);
+  /* Icons on dark surfaces / dock */
+  --sym-filter: invert(1) brightness(1.15);
+  /* Icons on QS/calendar surfaces (same as panel in dark) */
+  --surface-sym-filter: invert(1) brightness(1.15);
+  --wallpaper-color: #0b1c3a;
+  --wallpaper-1: url("assets/wallpapers/adwaita-d.webp");
+  --wallpaper-2: url("assets/wallpapers/adwaita-d.jpg");
+  --wallpaper-3: url("assets/wallpapers/adwaita-d.webp");
+  /* Nautilus / app windows */
+  --win-bg: #242424;
+  --win-header-bg: #303030;
+  --win-sidebar-bg: #2a2a2a;
+  --win-content-bg: #1e1e1e;
+  --win-fg: #f6f5f4;
+  --win-fg-dim: rgba(246, 245, 244, 0.65);
+  --win-border: rgba(255, 255, 255, 0.08);
+  --win-hover: rgba(255, 255, 255, 0.08);
+  --win-selected: rgba(53, 132, 228, 0.35);
+  --win-input-bg: rgba(255, 255, 255, 0.08);
+  --win-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  /* Symbolic icons inside app windows */
+  --win-sym-filter: invert(1) brightness(1.15);
+}
+
+html[data-theme="light"] {
+  /* Top panel, dock, and wallpaper stay as in dark style (GNOME Shell chrome) */
+  --panel-bg: rgba(0, 0, 0, 0.55);
+  --panel-fg: #f6f5f4;
+  --panel-fg-dim: rgba(246, 245, 244, 0.75);
+  --panel-sym-filter: invert(1) brightness(1.2);
+  --dock-bg: rgba(20, 20, 20, 0.72);
+  --dock-border: rgba(255, 255, 255, 0.1);
+  --hover-bg: rgba(255, 255, 255, 0.12);
+  --sym-filter: invert(1) brightness(1.15);
+  /* Wallpaper stays Adwaita dark */
+  --wallpaper-color: #0b1c3a;
+  --wallpaper-1: url("assets/wallpapers/adwaita-d.webp");
+  --wallpaper-2: url("assets/wallpapers/adwaita-d.jpg");
+  --wallpaper-3: url("assets/wallpapers/adwaita-d.webp");
+  /* Light Adwaita surfaces for menus / apps only */
+  --surface: rgba(250, 250, 250, 0.96);
+  --surface-solid: #fafafa;
+  --surface-raised: #ffffff;
+  --surface-fg: #1e1e1e;
+  --surface-fg-dim: rgba(30, 30, 30, 0.65);
+  --surface-muted: rgba(0, 0, 0, 0.07);
+  --surface-muted-hover: rgba(0, 0, 0, 0.11);
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.12);
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  /* QS / calendar icons: dark on light surface */
+  --surface-sym-filter: none;
+  --win-bg: #fafafa;
+  --win-header-bg: #ffffff;
+  --win-sidebar-bg: #f0f0f0;
+  --win-content-bg: #ffffff;
+  --win-fg: #1e1e1e;
+  --win-fg-dim: rgba(30, 30, 30, 0.6);
+  --win-border: rgba(0, 0, 0, 0.1);
+  --win-hover: rgba(0, 0, 0, 0.06);
+  --win-selected: rgba(53, 132, 228, 0.22);
+  --win-input-bg: rgba(0, 0, 0, 0.06);
+  --win-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
+  --win-sym-filter: none;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font);
+  color: var(--panel-fg);
+  background: var(--wallpaper-color);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  transition: color 200ms ease, background-color 200ms ease;
+}
+
+button,
+input {
+  font-family: inherit;
+}
+
+button {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+img {
+  display: block;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+/* ========== Desktop shell ========== */
+
+.desktop {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.wallpaper {
+  position: absolute;
+  inset: 0;
+  background-color: var(--wallpaper-color);
+  background-image: var(--wallpaper-1), var(--wallpaper-2), var(--wallpaper-3);
+  background-size: cover;
+  background-position: center;
+  z-index: 0;
+  transition: background-color 220ms ease;
+}
+
+/* Night Light — warm amber cast over the whole desktop (GNOME-like) */
+.night-light-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 450ms ease;
+  /* Layered warm filters approximate reduced color temperature */
+  background:
+    linear-gradient(
+      0deg,
+      rgba(255, 140, 50, 0.28),
+      rgba(255, 160, 70, 0.18) 40%,
+      rgba(255, 180, 90, 0.14)
+    );
+  mix-blend-mode: multiply;
+}
+
+html[data-night-light="on"] .night-light-overlay {
+  opacity: 1;
+}
+
+/* Soft-light layer boosts the warm glow without crushing blacks */
+.night-light-overlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 150, 60, 0.35);
+  mix-blend-mode: soft-light;
+  opacity: 0;
+  transition: opacity 450ms ease;
+}
+
+html[data-night-light="on"] .night-light-overlay::after {
+  opacity: 1;
+}
+
+/* ========== Top bar ========== */
+
+.top-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--panel-height);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0 8px;
+  background: var(--panel-bg);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  color: var(--panel-fg);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  z-index: 100;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+}
+
+/* GNOME 50 workspace indicators — single overview button */
+.workspace-indicators {
+  justify-self: start;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 10px;
+  margin-left: 6px;
+  border-radius: 999px;
+  transition: background var(--transition-fast);
+}
+
+.workspace-indicators:hover,
+.workspace-indicators[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.workspace-indicators:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.workspace-indicator {
+  /* Inactive: small circle */
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.45);
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+/* Active workspace: horizontal pill */
+.workspace-indicator.active {
+  width: 22px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.clock-btn {
+  justify-self: center;
+  align-self: center;
+  height: 24px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  transition: background var(--transition-fast);
+}
+
+.clock-btn:hover,
+.clock-btn[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.clock-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.status-area {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding-right: 6px;
+}
+
+.system-menu-btn {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  transition: background var(--transition-fast);
+}
+
+.system-menu-btn:hover,
+.system-menu-btn[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.system-menu-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.status-icons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  opacity: 0.95;
+}
+
+/* Top-panel tray glyphs always light-on-dark */
+.status-icons .sym {
+  width: 16px;
+  height: 16px;
+  filter: var(--panel-sym-filter);
+  opacity: 1;
+}
+
+/* ========== Quick Settings (GNOME 50) ========== */
+
+.quick-settings {
+  position: absolute;
+  top: calc(var(--panel-height) + 8px);
+  right: 10px;
+  width: 340px;
+  padding: 16px;
+  background: var(--surface);
+  color: var(--surface-fg);
+  backdrop-filter: blur(40px) saturate(1.2);
+  -webkit-backdrop-filter: blur(40px) saturate(1.2);
+  border: 1px solid var(--border-strong);
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+  z-index: 120;
+  animation: pop-in 140ms ease;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.quick-settings[hidden],
+.power-menu[hidden],
+.calendar-popover[hidden],
+.app-menu[hidden],
+.nautilus-window[hidden] {
+  display: none !important;
+}
+
+/* Opacity-only entry: avoids fighting layout transforms (e.g. calendar centering) */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Default symbolic filter (dock etc.) */
+.sym {
+  width: 16px;
+  height: 16px;
+  display: block;
+  filter: var(--sym-filter);
+  opacity: 0.95;
+  flex-shrink: 0;
+}
+
+.sym-sm {
+  width: 12px;
+  height: 12px;
+}
+
+/* Icons inside QS / calendar / power menus follow surface theme */
+.quick-settings .sym,
+.power-menu .sym,
+.calendar-popover .sym {
+  filter: var(--surface-sym-filter);
+  opacity: 0.9;
+}
+
+.qs-round-btn .sym {
+  width: 18px;
+  height: 18px;
+}
+
+.qs-toggle .sym:not(.sym-sm) {
+  width: 16px;
+  height: 16px;
+}
+
+/* White glyphs on blue accent pills in both themes */
+.qs-toggle.active .sym {
+  filter: invert(1) brightness(1.25) !important;
+  opacity: 1;
+}
+
+.qs-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.qs-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.qs-round-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-muted);
+  color: var(--surface-fg);
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.qs-round-btn:hover {
+  background: var(--surface-muted-hover);
+}
+
+.qs-round-btn:active {
+  transform: scale(0.96);
+}
+
+.qs-volume-row {
+  display: grid;
+  grid-template-columns: 20px 1fr 28px;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  color: var(--surface-fg);
+}
+
+.qs-volume-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.qs-chevron-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--surface-fg-dim);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.qs-chevron-btn:hover {
+  background: var(--surface-muted);
+  color: var(--surface-fg);
+}
+
+.qs-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  outline: none;
+  cursor: pointer;
+}
+
+.qs-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+  border: none;
+}
+
+.qs-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+  border: none;
+}
+
+.qs-toggles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.qs-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 48px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--surface-fg);
+  text-align: left;
+  transition: background var(--transition-fast), color var(--transition-fast), filter var(--transition-fast);
+}
+
+.qs-toggle:hover {
+  background: var(--surface-muted-hover);
+}
+
+.qs-toggle.active {
+  background: #3584e4;
+  color: #fff;
+}
+
+.qs-toggle-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.qs-toggle-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.qs-toggle-label {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qs-toggle-sub {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.9;
+  margin-top: 1px;
+}
+
+.qs-toggle-chevron {
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.qs-bg-apps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--surface-fg);
+  transition: background var(--transition-fast);
+}
+
+.qs-bg-apps:hover {
+  background: var(--surface-muted-hover);
+}
+
+/* ========== Power menu (GNOME 50) ========== */
+
+.power-menu {
+  position: absolute;
+  top: calc(var(--panel-height) + 64px);
+  right: 18px;
+  min-width: 220px;
+  padding: 8px;
+  background: var(--surface-raised);
+  color: var(--surface-fg);
+  border: 1px solid var(--border-strong);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  z-index: 130;
+  animation: pop-in 120ms ease;
+}
+
+.power-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  font-size: 15px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.power-menu-header .sym {
+  width: 18px;
+  height: 18px;
+}
+
+.power-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background var(--transition-fast);
+}
+
+.power-menu-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.power-menu-sep {
+  height: 1px;
+  margin: 6px 10px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* ========== Calendar / notifications (GNOME 50) ========== */
+
+.calendar-popover {
+  position: absolute;
+  top: calc(var(--panel-height) + 8px);
+  /* Center without transform so entry animation cannot displace it */
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: min(720px, calc(100vw - 24px));
+  height: min(520px, calc(100vh - var(--panel-height) - 80px));
+  display: grid;
+  grid-template-columns: 1.15fr 0.95fr;
+  background: var(--surface);
+  color: var(--surface-fg);
+  backdrop-filter: blur(40px) saturate(1.2);
+  -webkit-backdrop-filter: blur(40px) saturate(1.2);
+  border: 1px solid var(--border-strong);
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+  z-index: 120;
+  animation: pop-in 140ms ease;
+  overflow: hidden;
+}
+
+.cal-notifications {
+  position: relative;
+  padding: 16px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  min-height: 0;
+}
+
+.media-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.media-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.media-app {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 4px;
+}
+
+.media-app-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.media-app-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.media-meta {
+  min-width: 0;
+  padding-left: 26px;
+}
+
+.media-title {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-artist {
+  font-size: 12px;
+  color: var(--surface-fg-dim);
+  margin-top: 2px;
+}
+
+.media-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.media-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #f6f5f4;
+  opacity: 0.9;
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+}
+
+.media-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  opacity: 1;
+}
+
+.notif-clear {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background var(--transition-fast);
+}
+
+.notif-clear:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.cal-sidebar {
+  padding: 18px 18px 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cal-date-header {
+  margin-bottom: 14px;
+}
+
+.cal-weekday {
+  font-size: 13px;
+  color: var(--surface-fg-dim);
+  font-weight: 500;
+}
+
+.cal-full-date {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 2px;
+}
+
+.cal-month-nav {
+  display: grid;
+  grid-template-columns: 28px 1fr 28px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.cal-nav-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--surface-fg-dim);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.cal-nav-btn:hover {
+  background: var(--surface-muted);
+  color: var(--surface-fg);
+}
+
+.cal-month-label {
+  text-align: center;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--surface-fg-dim);
+  margin-bottom: 4px;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(6, 1fr);
+  /* Fixed 6-row height so every month matches GNOME (no scrollbar) */
+  height: 198px;
+  gap: 2px;
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+
+.cal-day {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  max-width: 32px;
+  max-height: 32px;
+  justify-self: center;
+  align-self: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  border-radius: 50%;
+  color: var(--surface-fg);
+  font-weight: 500;
+}
+
+.cal-day.muted {
+  color: var(--surface-fg-dim);
+  opacity: 0.55;
+}
+
+.cal-day.today {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+
+.cal-section {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.07);
+  margin-bottom: 10px;
+}
+
+.cal-section:last-child {
+  margin-bottom: 0;
+}
+
+.cal-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.cal-section-empty {
+  font-size: 13px;
+  color: var(--surface-fg-dim);
+}
+
+.worldclock-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.worldclock-city {
+  font-size: 13px;
+}
+
+.worldclock-time {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.worldclock-offset {
+  color: var(--surface-fg-dim);
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+@media (max-width: 700px) {
+  .calendar-popover {
+    grid-template-columns: 1fr;
+    height: auto;
+    max-height: calc(100vh - var(--panel-height) - 40px);
+    overflow: auto;
+  }
+
+  .cal-notifications {
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    min-height: 160px;
+  }
+}
+
+/* ========== App overview / menu ========== */
+
+.app-menu {
+  position: absolute;
+  inset: 0;
+  /* Above Nautilus windows (85); dock raises to 95 when overview is open */
+  z-index: 92;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: calc(var(--panel-height) + 28px);
+}
+
+.app-menu-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  z-index: 0;
+}
+
+.app-menu-content {
+  position: relative;
+  z-index: 1;
+  width: min(920px, calc(100% - 48px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: overview-in 200ms ease;
+}
+
+@keyframes overview-in {
+  from {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.app-search-wrap {
+  position: relative;
+  width: min(420px, 100%);
+  margin-bottom: 36px;
+}
+
+.app-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.app-search {
+  width: 100%;
+  height: 44px;
+  padding: 0 16px 0 42px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 15px;
+  outline: none;
+  transition: background var(--transition), border-color var(--transition), box-shadow var(--transition);
+}
+
+.app-search::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.app-search:focus {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 0 0 2px rgba(53, 132, 228, 0.35);
+}
+
+.app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 18px 12px;
+  width: 100%;
+  max-width: 780px;
+  justify-items: center;
+}
+
+.app-tile {
+  width: 110px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 8px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.app-tile:hover,
+.app-tile:focus-visible {
+  background: rgba(255, 255, 255, 0.12);
+  /*transform: translateY(-2px);*/
+  outline: none;
+}
+
+.app-tile:active {
+  transform: translateY(0) scale(0.97);
+}
+
+.app-tile img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35));
+  transition: transform var(--transition);
+}
+
+/*.app-tile:hover img {
+  transform: scale(1.06);
+}*/
+
+.app-tile-label {
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.25;
+  /* Always white — overview sits on blurred wallpaper in both themes */
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.app-empty {
+  margin-top: 24px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 15px;
+}
+
+/* ========== Layout chooser (preview chrome) ========== */
+
+.layout-chooser {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 95;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 16px;
+  border-radius: 14px;
+  background: rgba(22, 22, 22, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0.38;
+  transition: opacity 200ms ease, background 200ms ease, border-color 200ms ease;
+  user-select: none;
+  pointer-events: auto;
+}
+
+.layout-chooser:hover,
+.layout-chooser:focus-within {
+  opacity: 0.96;
+  background: rgba(22, 22, 22, 0.88);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.layout-chooser-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.layout-chooser-options {
+  display: flex;
+  gap: 10px;
+}
+
+.layout-opt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 110px;
+  padding: 10px 8px 10px;
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.85);
+  transition: background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.layout-opt:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.layout-opt.active {
+  background: rgba(53, 132, 228, 0.28);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(53, 132, 228, 0.65);
+}
+
+.layout-opt-name {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.layout-preview {
+  position: relative;
+  width: 72px;
+  height: 48px;
+  border-radius: 5px;
+  background: linear-gradient(145deg, rgba(80, 120, 160, 0.45), rgba(20, 35, 55, 0.55));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.lp-bar {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.lp-top {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+}
+
+.lp-dock {
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 38px;
+  height: 8px;
+  border-radius: 4px;
+}
+
+.lp-left {
+  top: 5px;
+  bottom: 0;
+  left: 0;
+  width: 8px;
+}
+
+.layout-opt.active .lp-bar {
+  background: var(--accent);
+}
+
+/* ========== Dash to Dock / left panel ========== */
+
+.dock {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 90;
+  pointer-events: none;
+}
+
+.dock-inner {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: var(--dock-pad) calc(var(--dock-pad) + 2px);
+  background: var(--dock-bg);
+  backdrop-filter: blur(24px) saturate(1.2);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  border: 1px solid var(--dock-border);
+  border-radius: 22px;
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.dock-item {
+  position: relative;
+  width: calc(var(--dock-icon) + 12px);
+  height: calc(var(--dock-icon) + 12px);
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  transition: background var(--transition-fast), transform var(--transition);
+}
+
+.dock-item img {
+  width: var(--dock-icon);
+  height: var(--dock-icon);
+  object-fit: contain;
+  transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
+}
+
+.dock-item img.symbolic {
+  width: 28px;
+  height: 28px;
+  filter: var(--sym-filter) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+  opacity: 0.92;
+}
+
+.dock-item:hover {
+  background: var(--hover-bg);
+}
+
+.dock-item.running .running-dot,
+.dock-item[data-app="files"].running .running-dot {
+  background: var(--panel-fg);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.25);
+}
+
+/*.dock-item:hover img {
+  transform: scale(1.12) translateY(-4px);
+}*/
+
+.dock-item:active img {
+  transform: scale(0.96);
+}
+
+.dock-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dock-show-apps[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.dock-separator {
+  width: 1px;
+  height: 36px;
+  margin: 0 6px;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 1px;
+}
+
+.dock-tooltip {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: rgba(28, 28, 28, 0.95);
+  border: 1px solid var(--border-strong);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  z-index: 5;
+}
+
+.dock-item:hover .dock-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Running indicator */
+.running-dot {
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.dock-item.running .running-dot,
+.dock-item[data-app="brave"] .running-dot {
+  background: var(--panel-fg);
+  opacity: 0.9;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
+}
+
+/* ----- Layout: Dash to Dock (default, bottom floating) ----- */
+
+.layout-dash {
+  --chrome-left: 0px;
+  --chrome-bottom: 72px;
+}
+
+/* ----- Layout: left side panel (no floating dock) ----- */
+
+.layout-left {
+  --chrome-left: var(--side-panel-width);
+  --chrome-bottom: 12px;
+}
+
+.layout-left .dock {
+  left: 0;
+  top: var(--panel-height);
+  bottom: 0;
+  right: auto;
+  transform: none;
+  width: var(--side-panel-width);
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.layout-left .dock-inner {
+  pointer-events: auto;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  padding: 10px 6px 12px;
+  border-radius: 0;
+  border: none;
+  border-right: 1px solid var(--dock-border);
+  box-shadow: none;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(20px) saturate(1.1);
+  -webkit-backdrop-filter: blur(20px) saturate(1.1);
+}
+
+.layout-left .dock-item {
+  width: calc(var(--dock-icon) + 10px);
+  height: calc(var(--dock-icon) + 10px);
+  border-radius: 14px;
+  flex-shrink: 0;
+}
+
+.layout-left .dock-separator {
+  width: 28px;
+  height: 1px;
+  margin: 4px 0;
+}
+
+.layout-left .running-dot {
+  bottom: auto;
+  left: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 4px;
+}
+
+.layout-left .dock-tooltip {
+  bottom: auto;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+}
+
+.layout-left .dock-item:hover .dock-tooltip {
+  transform: translateY(-50%) translateX(0);
+}
+
+/* Push app windows / overview content clear of the left panel */
+.layout-left .nautilus-window {
+  width: min(980px, calc(100vw - var(--side-panel-width) - 48px));
+  height: min(620px, calc(100vh - var(--panel-height) - 40px));
+}
+
+.layout-left .layout-chooser {
+  /* Keep chooser optically centered in the free desktop area */
+  left: calc(50% + var(--side-panel-width) / 2);
+}
+
+/* ========== Nautilus (Files) window ========== */
+
+.nautilus-window {
+  position: absolute;
+  top: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(980px, calc(100vw - 48px));
+  height: min(620px, calc(100vh - var(--panel-height) - 100px));
+  display: flex;
+  flex-direction: column;
+  background: var(--win-bg);
+  color: var(--win-fg);
+  border: 1px solid var(--win-border);
+  border-radius: 14px;
+  box-shadow: var(--win-shadow);
+  overflow: hidden;
+  z-index: 85;
+  animation: pop-in 160ms ease;
+}
+
+.nautilus-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 6px 10px;
+  background: var(--win-header-bg);
+  border-bottom: 1px solid var(--win-border);
+  flex-shrink: 0;
+}
+
+.nautilus-header-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nautilus-header-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: var(--win-fg);
+  transition: background var(--transition-fast);
+}
+
+.nautilus-header-btn:hover:not(:disabled) {
+  background: var(--win-hover);
+}
+
+.nautilus-header-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.nautilus-header-btn .sym {
+  width: 16px;
+  height: 16px;
+  filter: var(--win-sym-filter);
+}
+
+.nautilus-path {
+  justify-self: center;
+  max-width: 480px;
+  width: 100%;
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: var(--win-input-bg);
+  border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--win-fg);
+}
+
+.nautilus-path-icon {
+  display: none;
+}
+
+.nautilus-path-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.nautilus-body {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 0;
+  flex: 1;
+}
+
+.nautilus-sidebar {
+  background: var(--win-sidebar-bg);
+  border-right: 1px solid var(--win-border);
+  padding: 10px 8px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--win-fg-dim);
+  padding: 10px 12px 6px;
+}
+
+.sidebar-separator {
+  height: 1px;
+  margin: 8px 10px;
+  background: var(--win-border);
+  flex-shrink: 0;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--win-fg);
+  transition: background var(--transition-fast);
+}
+
+/* Nautilus sidebar uses Adwaita symbolic place icons */
+.sidebar-icon,
+.nautilus-window .sidebar-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: var(--win-sym-filter);
+  opacity: 0.9;
+}
+
+.nautilus-path-icon.sidebar-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.nautilus-search-bar .sym {
+  filter: var(--win-sym-filter);
+}
+
+.sidebar-item:hover {
+  background: var(--win-hover);
+}
+
+.sidebar-item.active {
+  background: var(--win-selected);
+  font-weight: 600;
+}
+
+.sidebar-item img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.nautilus-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--win-content-bg);
+}
+
+.nautilus-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--win-border);
+  background: var(--win-header-bg);
+}
+
+.nautilus-search-bar[hidden] {
+  display: none !important;
+}
+
+.nautilus-search-bar .sym {
+  opacity: 0.7;
+}
+
+.nautilus-search-input {
+  flex: 1;
+  height: 34px;
+  border: none;
+  outline: none;
+  background: var(--win-input-bg);
+  color: var(--win-fg);
+  border-radius: 999px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+.nautilus-search-input::placeholder {
+  color: var(--win-fg-dim);
+}
+
+.nautilus-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 16px 20px;
+}
+
+/* Grid view (default Nautilus) */
+.nautilus-content.view-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px 6px;
+  align-content: start;
+}
+
+.nautilus-content.view-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+}
+
+.file-item {
+  border-radius: 12px;
+  background: transparent;
+  color: var(--win-fg);
+  transition: background var(--transition-fast);
+  cursor: default;
+}
+
+.file-item:hover,
+.file-item.selected {
+  background: var(--win-selected);
+}
+
+.view-grid .file-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 8px 10px;
+  text-align: center;
+}
+
+.view-grid .file-item img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.2));
+}
+
+.view-grid .file-item-name {
+  font-size: 12px;
+  line-height: 1.3;
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+
+/* List view */
+.view-list .file-item {
+  display: grid;
+  grid-template-columns: 28px 1fr 100px 140px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  text-align: left;
+  width: 100%;
+}
+
+.view-list .file-item img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.view-list .file-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.view-list .file-item-meta {
+  font-size: 12px;
+  color: var(--win-fg-dim);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.nautilus-empty {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 280px;
+  color: var(--win-fg-dim);
+  text-align: center;
+  padding: 24px;
+}
+
+.nautilus-empty-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--win-fg);
+}
+
+.nautilus-empty-sub {
+  font-size: 13px;
+}
+
+.nautilus-list-header {
+  display: none;
+}
+
+.view-list .nautilus-list-header {
+  display: grid;
+  grid-template-columns: 28px 1fr 100px 140px;
+  gap: 10px;
+  padding: 4px 12px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--win-fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--win-border);
+  margin-bottom: 4px;
+  position: sticky;
+  top: 0;
+  background: var(--win-content-bg);
+  z-index: 1;
+}
+
+.view-list .nautilus-list-header span:nth-child(3),
+.view-list .nautilus-list-header span:nth-child(4) {
+  text-align: right;
+}
+
+/* View toggle active state */
+.nautilus-header-btn.active {
+  background: var(--win-selected);
+}
+
+/* ========== Misc ========== */
+
+.desktop-hint {
+  position: absolute;
+  bottom: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.28);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* When overview is open, dock stays usable (toggle Show Apps) */
+.desktop.overview-open .dock {
+  z-index: 95;
+}
+
+.desktop.overview-open .desktop-hint {
+  opacity: 0;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .app-grid {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  }
+
+  .quick-settings {
+    width: calc(100vw - 20px);
+    right: 10px;
+  }
+
+  :root {
+    --dock-icon: 42px;
+  }
+}
+
+/* ========== Light theme surface overrides ========== */
+
+/* QS range track (inactive portion) */
+html[data-theme="light"] .qs-range {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+/* Calendar / media chips on light surface */
+html[data-theme="light"] .media-card,
+html[data-theme="light"] .cal-section,
+html[data-theme="light"] .notif-clear {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--surface-fg);
+}
+
+html[data-theme="light"] .media-btn,
+html[data-theme="light"] .notif-clear {
+  color: var(--surface-fg);
+}
+
+html[data-theme="light"] .power-menu-item:hover,
+html[data-theme="light"] .cal-nav-btn:hover,
+html[data-theme="light"] .media-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+/* Overview search stays readable on light wallpaper */
+html[data-theme="light"] .app-search {
+  background: rgba(255, 255, 255, 0.88);
+  color: #1e1e1e;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+html[data-theme="light"] .app-search::placeholder {
+  color: rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme="light"] .app-search-icon {
+  color: rgba(0, 0, 0, 0.55);
+  filter: none;
+}
+
+/* Empty search message can stay light for contrast on blur */
+html[data-theme="light"] .app-empty {
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}

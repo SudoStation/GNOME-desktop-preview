@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GNOME Desktop Preview</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cantarell:wght@400;500;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div id="desktop" class="desktop layout-dash" data-layout="dash" aria-label="GNOME desktop preview">
+    <!-- Wallpaper -->
+    <div class="wallpaper" role="presentation"></div>
+    <!-- Night Light warm overlay (toggled via Quick Settings) -->
+    <div class="night-light-overlay" id="night-light-overlay" aria-hidden="true"></div>
+
+    <!-- Layout chooser (preview UI — not part of GNOME itself) -->
+    <div class="layout-chooser" id="layout-chooser" role="group" aria-label="Desktop layout">
+      <div class="layout-chooser-label">Layout</div>
+      <div class="layout-chooser-options">
+        <button type="button" class="layout-opt active" data-layout="dash" title="Floating bottom Dash to Dock">
+          <span class="layout-preview layout-preview-dash" aria-hidden="true">
+            <span class="lp-bar lp-top"></span>
+            <span class="lp-bar lp-dock"></span>
+          </span>
+          <span class="layout-opt-name">Dash to Dock</span>
+        </button>
+        <button type="button" class="layout-opt" data-layout="left" title="Left side panel, no floating dock">
+          <span class="layout-preview layout-preview-left" aria-hidden="true">
+            <span class="lp-bar lp-top"></span>
+            <span class="lp-bar lp-left"></span>
+          </span>
+          <span class="layout-opt-name">Left panel</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Top panel (GNOME Shell 50) -->
+    <header class="top-bar" role="banner">
+      <!-- Workspace indicators (visual only) — one control that toggles overview -->
+      <button type="button" class="workspace-indicators" id="workspace-indicators" aria-expanded="false" aria-controls="app-menu" title="Overview" aria-label="Overview">
+        <span class="workspace-indicator active" aria-hidden="true"></span>
+        <span class="workspace-indicator" aria-hidden="true"></span>
+      </button>
+
+      <button type="button" class="clock-btn" id="clock-btn" aria-label="Date and time">
+        <span id="clock-text">Sat 00:00</span>
+      </button>
+
+      <div class="status-area">
+        <button type="button" class="system-menu-btn" id="system-menu-btn" aria-expanded="false" aria-controls="quick-settings" title="System menu">
+          <span class="status-icons" aria-hidden="true">
+            <!-- Network (wired), volume, power — match GNOME top-panel tray -->
+            <img class="status-icon sym" src="assets/status/network-wired-symbolic.svg" alt="" draggable="false" />
+            <img class="status-icon sym" src="assets/status/audio-volume-medium-symbolic.svg" alt="" draggable="false" />
+            <img class="status-icon sym" src="assets/status/system-shutdown-symbolic.svg" alt="" draggable="false" />
+          </span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Quick Settings (GNOME 50 system menu) — icons from GNOME Shell / Adwaita -->
+    <div class="quick-settings" id="quick-settings" role="dialog" aria-label="Quick Settings" hidden>
+      <div class="qs-toolbar">
+        <div class="qs-toolbar-group">
+          <button type="button" class="qs-round-btn" title="Screenshot" aria-label="Screenshot">
+            <img class="sym" src="assets/status/screenshooter-symbolic.svg" alt="" draggable="false" />
+          </button>
+          <button type="button" class="qs-round-btn" title="Settings" aria-label="Settings">
+            <img class="sym" src="assets/status/cog-wheel-symbolic.svg" alt="" draggable="false" />
+          </button>
+        </div>
+        <div class="qs-toolbar-group">
+          <button type="button" class="qs-round-btn" title="Lock" aria-label="Lock">
+            <img class="sym" src="assets/status/system-lock-screen-symbolic.svg" alt="" draggable="false" />
+          </button>
+          <button type="button" class="qs-round-btn" id="power-menu-btn" title="Power Off" aria-label="Power menu" aria-haspopup="true">
+            <img class="sym" src="assets/status/system-shutdown-symbolic.svg" alt="" draggable="false" />
+          </button>
+        </div>
+      </div>
+
+      <div class="qs-volume-row">
+        <img class="sym qs-volume-icon" src="assets/status/audio-volume-medium-symbolic.svg" alt="" draggable="false" />
+        <input type="range" class="qs-range" id="volume-slider" min="0" max="100" value="58" aria-label="Volume" />
+        <button type="button" class="qs-chevron-btn" title="Sound settings" aria-label="Sound settings">
+          <img class="sym sym-sm" src="assets/status/go-next-symbolic.svg" alt="" draggable="false" />
+        </button>
+      </div>
+
+      <div class="qs-toggles">
+        <button type="button" class="qs-toggle active has-menu" data-toggle="network" aria-pressed="true">
+          <span class="qs-toggle-main">
+            <img class="sym" src="assets/status/network-wired-symbolic.svg" alt="" draggable="false" />
+            <span class="qs-toggle-text">
+              <span class="qs-toggle-label">Wired</span>
+            </span>
+          </span>
+          <img class="sym sym-sm qs-toggle-chevron" src="assets/status/go-next-symbolic.svg" alt="" draggable="false" />
+        </button>
+
+        <button type="button" class="qs-toggle active has-menu" data-toggle="bluetooth" aria-pressed="true">
+          <span class="qs-toggle-main">
+            <img class="sym" src="assets/status/bluetooth-symbolic.svg" alt="" draggable="false" />
+            <span class="qs-toggle-text">
+              <span class="qs-toggle-label">Bluetooth</span>
+            </span>
+          </span>
+          <img class="sym sym-sm qs-toggle-chevron" src="assets/status/go-next-symbolic.svg" alt="" draggable="false" />
+        </button>
+
+        <button type="button" class="qs-toggle active has-menu" data-toggle="power-mode" aria-pressed="true">
+          <span class="qs-toggle-main">
+            <img class="sym" src="assets/status/power-profile-performance-symbolic.svg" alt="" draggable="false" />
+            <span class="qs-toggle-text">
+              <span class="qs-toggle-label">Power Mode</span>
+              <span class="qs-toggle-sub">Performance</span>
+            </span>
+          </span>
+          <img class="sym sym-sm qs-toggle-chevron" src="assets/status/go-next-symbolic.svg" alt="" draggable="false" />
+        </button>
+
+        <button type="button" class="qs-toggle" data-toggle="night" id="night-light-toggle" aria-pressed="false">
+          <span class="qs-toggle-main">
+            <img class="sym" src="assets/status/night-light-symbolic.svg" alt="" draggable="false" />
+            <span class="qs-toggle-text">
+              <span class="qs-toggle-label">Night Light</span>
+            </span>
+          </span>
+        </button>
+
+        <button type="button" class="qs-toggle active" data-toggle="dark" id="dark-style-toggle" aria-pressed="true">
+          <span class="qs-toggle-main">
+            <img class="sym" src="assets/status/dark-mode-symbolic.svg" alt="" draggable="false" />
+            <span class="qs-toggle-text">
+              <span class="qs-toggle-label">Dark Style</span>
+            </span>
+          </span>
+        </button>
+
+        <button type="button" class="qs-toggle" data-toggle="dnd" aria-pressed="false">
+          <span class="qs-toggle-main">
+            <img class="sym" src="assets/status/notifications-disabled-symbolic.svg" alt="" draggable="false" />
+            <span class="qs-toggle-text">
+              <span class="qs-toggle-label">Do Not Disturb</span>
+            </span>
+          </span>
+        </button>
+      </div>
+
+      <button type="button" class="qs-bg-apps" id="bg-apps-btn">
+        <span>1 Background App</span>
+        <img class="sym sym-sm" src="assets/status/go-next-symbolic.svg" alt="" draggable="false" />
+      </button>
+    </div>
+
+    <!-- Power menu (GNOME 50) -->
+    <div class="power-menu" id="power-menu" role="menu" aria-label="Power Off" hidden>
+      <div class="power-menu-header" role="presentation">
+        <img class="sym" src="assets/status/system-shutdown-symbolic.svg" alt="" draggable="false" />
+        <span>Power Off</span>
+      </div>
+      <button type="button" class="power-menu-item" role="menuitem">Suspend</button>
+      <button type="button" class="power-menu-item" role="menuitem">Restart…</button>
+      <button type="button" class="power-menu-item" role="menuitem">Power Off…</button>
+      <div class="power-menu-sep" role="separator"></div>
+      <button type="button" class="power-menu-item" role="menuitem">Log Out…</button>
+    </div>
+
+    <!-- Date / notifications popover (GNOME 50 calendar) -->
+    <div class="calendar-popover" id="calendar-popover" role="dialog" aria-label="Calendar and notifications" hidden>
+      <div class="cal-notifications">
+        <div class="media-card">
+          <div class="media-card-body">
+            <div class="media-app">
+              <img src="assets/Brave.png" alt="" class="media-app-icon" draggable="false" />
+              <span class="media-app-name">Brave</span>
+            </div>
+            <div class="media-meta">
+              <div class="media-title">Ranking Linux deskt…</div>
+              <div class="media-artist">The Linux Experiment</div>
+            </div>
+          </div>
+          <div class="media-controls">
+            <button type="button" class="media-btn" aria-label="Previous">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3.25 3.5h1.5v9h-1.5zm9.4.3L8.1 7.15a1.1 1.1 0 0 0 0 1.7l4.55 3.35a.75.75 0 0 0 1.2-.6V4.4a.75.75 0 0 0-1.2-.6z"/></svg>
+            </button>
+            <button type="button" class="media-btn media-play" aria-label="Play">
+              <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M5 3.1a.8.8 0 0 1 1.22-.68l7.1 4.4a.8.8 0 0 1 0 1.36l-7.1 4.4A.8.8 0 0 1 5 11.9V3.1z"/></svg>
+            </button>
+            <button type="button" class="media-btn" aria-label="Next">
+              <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M11.25 3.5h1.5v9h-1.5zM3.35 3.8 7.9 7.15a1.1 1.1 0 0 1 0 1.7L3.35 12.2a.75.75 0 0 1-1.2-.6V4.4a.75.75 0 0 1 1.2-.6z"/></svg>
+            </button>
+          </div>
+        </div>
+        <button type="button" class="notif-clear" id="notif-clear">Clear</button>
+      </div>
+
+      <div class="cal-sidebar">
+        <div class="cal-date-header">
+          <div class="cal-weekday" id="cal-weekday">Saturday</div>
+          <div class="cal-full-date" id="cal-full-date">18 July 2026</div>
+        </div>
+
+        <div class="cal-month-nav">
+          <button type="button" class="cal-nav-btn" id="cal-prev" aria-label="Previous month">
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M9.8 3.2a.75.75 0 0 1 0 1.06L6.06 8l3.74 3.74a.75.75 0 1 1-1.06 1.06L4.47 8.53a.75.75 0 0 1 0-1.06l4.27-4.27a.75.75 0 0 1 1.06 0z"/></svg>
+          </button>
+          <span class="cal-month-label" id="cal-month-label">July</span>
+          <button type="button" class="cal-nav-btn" id="cal-next" aria-label="Next month">
+            <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M6.2 3.2a.75.75 0 0 0 0 1.06L9.94 8 6.2 11.74a.75.75 0 1 0 1.06 1.06l4.27-4.27a.75.75 0 0 0 0-1.06L7.26 3.2a.75.75 0 0 0-1.06 0z"/></svg>
+          </button>
+        </div>
+
+        <div class="cal-weekdays" aria-hidden="true">
+          <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+
+        <div class="cal-section cal-events">
+          <div class="cal-section-title">Today</div>
+          <div class="cal-section-empty">No Events</div>
+        </div>
+
+        <div class="cal-section cal-worldclocks">
+          <div class="cal-section-title">World Clocks</div>
+          <div class="worldclock-row">
+            <span class="worldclock-city">Atlanta</span>
+            <span class="worldclock-time" id="worldclock-atlanta">08:17 <span class="worldclock-offset">-6</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- App overview / menu -->
+    <div class="app-menu" id="app-menu" role="dialog" aria-label="Applications" hidden>
+      <div class="app-menu-backdrop" id="app-menu-backdrop"></div>
+      <div class="app-menu-content">
+        <div class="app-search-wrap">
+          <svg class="app-search-icon" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true">
+            <path fill="currentColor" d="M7 2a5 5 0 1 0 3.16 8.84l2.5 2.5a.75.75 0 1 0 1.06-1.06l-2.5-2.5A5 5 0 0 0 7 2zm-3.5 5a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z"/>
+          </svg>
+          <input type="search" class="app-search" id="app-search" placeholder="Type to search" autocomplete="off" spellcheck="false" />
+        </div>
+
+        <div class="app-grid" id="app-grid" role="list">
+          <!-- Filled by JS -->
+        </div>
+
+        <p class="app-empty" id="app-empty" hidden>No results found</p>
+      </div>
+    </div>
+
+    <!-- Dash / side panel (layout switches between bottom dock and left panel) -->
+    <nav class="dock" id="dock" aria-label="Dash">
+      <div class="dock-inner">
+        <button type="button" class="dock-item" data-app="files" id="dock-files" title="Files">
+          <img src="assets/apps/org.gnome.Nautilus.png" alt="" draggable="false" />
+          <span class="dock-tooltip">Files</span>
+          <span class="running-dot" aria-hidden="true"></span>
+        </button>
+        
+        <button type="button" class="dock-item" data-app="brave" title="Brave">
+          <img src="assets/Brave.png" alt="" draggable="false" />
+          <span class="dock-tooltip">Brave</span>
+          <span class="running-dot" aria-hidden="true"></span>
+        </button>
+
+        <button type="button" class="dock-item" data-app="steam" title="Steam">
+          <img src="assets/Steam_icon.png" alt="" draggable="false" />
+          <span class="dock-tooltip">Steam</span>
+        </button>
+
+        <div class="dock-separator" aria-hidden="true"></div>
+
+        <button type="button" class="dock-item dock-show-apps" id="show-apps-btn" title="Show Apps" aria-expanded="false" aria-controls="app-menu">
+          <img src="assets/actions/view-app-grid-symbolic.svg" class="symbolic" alt="" draggable="false" />
+          <span class="dock-tooltip">Show Apps</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Nautilus (Files) window -->
+    <div class="nautilus-window" id="nautilus-window" role="dialog" aria-label="Files" hidden>
+      <header class="nautilus-header">
+        <div class="nautilus-header-group">
+          <button type="button" class="nautilus-header-btn" id="nau-back" title="Back" aria-label="Back" disabled>
+            <img class="sym" src="assets/actions/go-previous-symbolic.svg" alt="" draggable="false" />
+          </button>
+          <button type="button" class="nautilus-header-btn" id="nau-forward" title="Forward" aria-label="Forward" disabled>
+            <img class="sym" src="assets/actions/go-next-symbolic.svg" alt="" draggable="false" />
+          </button>
+        </div>
+
+        <div class="nautilus-path" id="nau-path" title="Current location">
+          <img class="nautilus-path-icon" id="nau-path-icon" src="assets/places/user-home.png" alt="" draggable="false" />
+          <span class="nautilus-path-label" id="nau-path-label">Home</span>
+        </div>
+
+        <div class="nautilus-header-group">
+          <button type="button" class="nautilus-header-btn" id="nau-search-btn" title="Search" aria-label="Search" aria-pressed="false">
+            <img class="sym" src="assets/actions/search-symbolic.svg" alt="" draggable="false" />
+          </button>
+          <button type="button" class="nautilus-header-btn active" id="nau-view-grid" title="Grid View" aria-label="Grid View" aria-pressed="true">
+            <img class="sym" src="assets/actions/view-grid-symbolic.svg" alt="" draggable="false" />
+          </button>
+          <button type="button" class="nautilus-header-btn" id="nau-view-list" title="List View" aria-label="List View" aria-pressed="false">
+            <img class="sym" src="assets/actions/view-list-symbolic.svg" alt="" draggable="false" />
+          </button>
+          <button type="button" class="nautilus-header-btn" id="nau-close" title="Close" aria-label="Close">
+            <img class="sym" src="assets/status/window-close-symbolic.svg" alt="" draggable="false" />
+          </button>
+        </div>
+      </header>
+
+      <div class="nautilus-body">
+        <aside class="nautilus-sidebar" id="nau-sidebar" aria-label="Places">
+          <!-- Filled by JS -->
+        </aside>
+
+        <div class="nautilus-main">
+          <div class="nautilus-search-bar" id="nau-search-bar" hidden>
+            <img class="sym" src="assets/actions/search-symbolic.svg" alt="" draggable="false" />
+            <input type="search" class="nautilus-search-input" id="nau-search-input" placeholder="Search" autocomplete="off" spellcheck="false" />
+          </div>
+
+          <div class="nautilus-content view-grid" id="nau-content" role="list">
+            <div class="nautilus-list-header" aria-hidden="true">
+              <span></span>
+              <span>Name</span>
+              <span>Size</span>
+              <span>Modified</span>
+            </div>
+            <!-- Items filled by JS -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
