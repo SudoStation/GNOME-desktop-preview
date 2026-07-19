@@ -7,9 +7,6 @@
 
 Interactive browser mockup of a GNOME Shell desktop. Static HTML/CSS/JS — no backend.
 
-### View online
-[https://sudostation.github.io/GNOME-desktop-preview/](https://sudostation.github.io/GNOME-desktop-preview/)
-
 ### or run locally
 1. Download the zip folder.
 2. Open `index.html` in a browser.
