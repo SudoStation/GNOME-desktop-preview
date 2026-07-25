@@ -11,7 +11,8 @@ html[data-theme="dark"] {
   --panel-bg: rgba(0, 0, 0, 0.55);
   --panel-fg: #f6f5f4;
   --panel-fg-dim: rgba(246, 245, 244, 0.75);
-  --panel-sym-filter: invert(1) brightness(1.2);
+  /* brightness(0) first so mid-grey Yaru glyphs become pure white after invert */
+  --panel-sym-filter: brightness(0) invert(1);
   --accent: #3584e4;
   --accent-hover: #62a0ea;
   /* Popovers / QS surfaces */
@@ -37,9 +38,9 @@ html[data-theme="dark"] {
   --dock-border: rgba(255, 255, 255, 0.1);
   --hover-bg: rgba(255, 255, 255, 0.12);
   /* Icons on dark surfaces / dock */
-  --sym-filter: invert(1) brightness(1.15);
+  --sym-filter: brightness(0) invert(1);
   /* Icons on QS/calendar surfaces (same as panel in dark) */
-  --surface-sym-filter: invert(1) brightness(1.15);
+  --surface-sym-filter: brightness(0) invert(1);
   --wallpaper-color: #0b1c3a;
   --wallpaper-1: url("assets/wallpapers/adwaita-d.webp");
   --wallpaper-2: url("assets/wallpapers/adwaita-d.jpg");
@@ -57,7 +58,7 @@ html[data-theme="dark"] {
   --win-input-bg: rgba(255, 255, 255, 0.08);
   --win-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
   /* Symbolic icons inside app windows */
-  --win-sym-filter: invert(1) brightness(1.15);
+  --win-sym-filter: brightness(0) invert(1);
 }
 
 html[data-theme="light"] {
@@ -65,11 +66,11 @@ html[data-theme="light"] {
   --panel-bg: rgba(0, 0, 0, 0.55);
   --panel-fg: #f6f5f4;
   --panel-fg-dim: rgba(246, 245, 244, 0.75);
-  --panel-sym-filter: invert(1) brightness(1.2);
+  --panel-sym-filter: brightness(0) invert(1);
   --dock-bg: rgba(20, 20, 20, 0.72);
   --dock-border: rgba(255, 255, 255, 0.1);
   --hover-bg: rgba(255, 255, 255, 0.12);
-  --sym-filter: invert(1) brightness(1.15);
+  --sym-filter: brightness(0) invert(1);
   /* Wallpaper stays Adwaita dark */
   --wallpaper-color: #0b1c3a;
   --wallpaper-1: url("assets/wallpapers/adwaita-d.webp");
@@ -86,8 +87,8 @@ html[data-theme="light"] {
   --border: rgba(0, 0, 0, 0.08);
   --border-strong: rgba(0, 0, 0, 0.12);
   --shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
-  /* QS / calendar icons: dark on light surface */
-  --surface-sym-filter: none;
+  /* QS / calendar icons: pure black from any source fill */
+  --surface-sym-filter: brightness(0);
   --win-bg: #fafafa;
   --win-header-bg: #ffffff;
   --win-sidebar-bg: #f0f0f0;
@@ -99,7 +100,7 @@ html[data-theme="light"] {
   --win-selected: rgba(53, 132, 228, 0.22);
   --win-input-bg: rgba(0, 0, 0, 0.06);
   --win-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
-  --win-sym-filter: none;
+  --win-sym-filter: brightness(0);
 }
 
 *,
@@ -210,9 +211,10 @@ html[data-night-light="on"] .night-light-overlay::after {
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   padding: 0 8px;
-  background: var(--panel-bg);
-  backdrop-filter: blur(20px) saturate(1.2);
-  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  /* Solid fill only — no backdrop-filter. Chromium flashes a dark bar across
+     the top when the pointer leaves the page (e.g. hovering a browser tab),
+     especially while the app overview scrim is open. */
+  background: #1c1c1c;
   color: var(--panel-fg);
   font-size: 14px;
   font-weight: 500;
@@ -286,8 +288,41 @@ html[data-night-light="on"] .night-light-overlay::after {
   justify-self: end;
   display: flex;
   align-items: center;
+  gap: 2px;
   height: 100%;
   padding-right: 6px;
+}
+
+/* AppIndicator-style tray icons (e.g. Steam) left of system menu */
+.tray-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  height: 24px;
+  min-width: 24px;
+  padding: 0 4px;
+  border-radius: 999px;
+  transition: background var(--transition-fast);
+}
+
+.tray-indicator:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.tray-indicator .status-icon {
+  width: 16px;
+  height: 16px;
+  opacity: 1;
+}
+
+/* Steam tray mono emblem — already light-on-dark; keep as-is */
+.tray-indicator .tray-steam {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  filter: none;
+  opacity: 0.95;
 }
 
 .system-menu-btn {
@@ -404,9 +439,9 @@ html[data-night-light="on"] .night-light-overlay::after {
   height: 16px;
 }
 
-/* White glyphs on blue accent pills in both themes */
+/* White glyphs on blue accent pills in both themes (works for mid-grey Yaru fills) */
 .qs-toggle.active .sym {
-  filter: invert(1) brightness(1.25) !important;
+  filter: brightness(0) invert(1) !important;
   opacity: 1;
 }
 
@@ -934,19 +969,46 @@ html[data-night-light="on"] .night-light-overlay::after {
   padding-top: calc(var(--panel-height) + 28px);
 }
 
+/*
+ * Overview dim + blur without backdrop-filter.
+ * Chromium flashes a dark top bar when backdrop-filter is used and the pointer
+ * leaves the page (e.g. hovering a real browser tab). Instead: blur a copy of
+ * the wallpaper with filter:blur(), then darken it.
+ */
 .app-menu-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(18px) saturate(1.1);
-  -webkit-backdrop-filter: blur(18px) saturate(1.1);
   z-index: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.app-menu-backdrop::before {
+  content: "";
+  position: absolute;
+  /* Oversized so blur soft edges don't show a hard frame */
+  inset: -28px;
+  background-color: var(--wallpaper-color);
+  background-image: var(--wallpaper-1), var(--wallpaper-2), var(--wallpaper-3);
+  background-size: cover;
+  background-position: center;
+  filter: blur(22px) saturate(1.15);
+  transform: scale(1.06);
+  pointer-events: none;
+}
+
+.app-menu-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.48);
+  pointer-events: none;
 }
 
 .app-menu-content {
   position: relative;
   z-index: 1;
-  width: min(920px, calc(100% - 48px));
+  width: min(1100px, calc(100% - 48px));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -967,7 +1029,7 @@ html[data-night-light="on"] .night-light-overlay::after {
 .app-search-wrap {
   position: relative;
   width: min(420px, 100%);
-  margin-bottom: 36px;
+  margin-bottom: 28px;
 }
 
 .app-search-icon {
@@ -1066,114 +1128,177 @@ html[data-night-light="on"] .night-light-overlay::after {
   font-size: 15px;
 }
 
-/* ========== Layout chooser (preview chrome) ========== */
+/* Workspace previews — horizontal row under search (GNOME overview) */
+.workspace-thumbnails {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: center;
+  align-items: stretch;
+  gap: 18px;
+  width: 100%;
+  max-width: 1040px;
+  margin-bottom: 36px;
+  padding: 4px 0 8px;
+}
+
+.workspace-thumb {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 280px;
+  aspect-ratio: 16 / 10;
+  height: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: default;
+  overflow: hidden;
+  outline: none;
+}
+
+.workspace-thumb-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (max-width: 900px) {
+  .workspace-thumbnails {
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+
+  .workspace-thumb {
+    max-width: 220px;
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace-thumbnails {
+    gap: 8px;
+    margin-bottom: 22px;
+  }
+
+  .workspace-thumb {
+    max-width: none;
+  }
+}
+
+/* ========== Layout chooser (preview chrome — same as Deepin) ========== */
 
 .layout-chooser {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  top: calc(var(--panel-height) + 16px);
+  right: 16px;
   z-index: 95;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 16px 16px;
-  border-radius: 14px;
-  background: rgba(22, 22, 22, 0.42);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  opacity: 0.38;
-  transition: opacity 200ms ease, background 200ms ease, border-color 200ms ease;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(30, 30, 30, 0.78);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35), 0 0 0 1px var(--border);
   user-select: none;
   pointer-events: auto;
+  opacity: 0.45;
+  transition: opacity var(--transition);
 }
 
 .layout-chooser:hover,
 .layout-chooser:focus-within {
-  opacity: 0.96;
-  background: rgba(22, 22, 22, 0.88);
-  border-color: rgba(255, 255, 255, 0.16);
+  opacity: 1;
 }
 
 .layout-chooser-label {
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .layout-chooser-options {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 
 .layout-opt {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  width: 110px;
-  padding: 10px 8px 10px;
-  border-radius: 10px;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  min-width: 72px;
   color: rgba(255, 255, 255, 0.85);
-  transition: background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
+  transition: background var(--transition-fast);
 }
 
 .layout-opt:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--hover-bg);
 }
 
 .layout-opt.active {
   background: rgba(53, 132, 228, 0.28);
-  color: #fff;
-  box-shadow: inset 0 0 0 1px rgba(53, 132, 228, 0.65);
+  box-shadow: inset 0 0 0 1px rgba(53, 132, 228, 0.45);
 }
 
 .layout-opt-name {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.layout-opt.active .layout-opt-name {
+  color: var(--accent-hover);
 }
 
 .layout-preview {
   position: relative;
-  width: 72px;
-  height: 48px;
-  border-radius: 5px;
-  background: linear-gradient(145deg, rgba(80, 120, 160, 0.45), rgba(20, 35, 55, 0.55));
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  width: 52px;
+  height: 34px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
   overflow: hidden;
 }
 
 .lp-bar {
   position: absolute;
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.45);
+  border-radius: 2px;
 }
 
 .lp-top {
   top: 0;
   left: 0;
   right: 0;
-  height: 5px;
+  height: 4px;
+  border-radius: 0;
 }
 
 .lp-dock {
-  bottom: 4px;
+  bottom: 3px;
   left: 50%;
   transform: translateX(-50%);
-  width: 38px;
-  height: 8px;
-  border-radius: 4px;
+  width: 28px;
+  height: 6px;
+  border-radius: 3px;
 }
 
 .lp-left {
-  top: 5px;
+  top: 4px;
   bottom: 0;
   left: 0;
-  width: 8px;
+  width: 6px;
+  border-radius: 0;
 }
 
 .layout-opt.active .lp-bar {
@@ -1236,8 +1361,8 @@ html[data-night-light="on"] .night-light-overlay::after {
 
 .dock-item.running .running-dot,
 .dock-item[data-app="files"].running .running-dot {
-  background: var(--panel-fg);
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.25);
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(53, 132, 228, 0.45);
 }
 
 /*.dock-item:hover img {
@@ -1289,23 +1414,24 @@ html[data-night-light="on"] .night-light-overlay::after {
   transform: translateX(-50%) translateY(0);
 }
 
-/* Running indicator */
+/* Running indicator — below/beside icon with clear gap, GNOME accent blue */
 .running-dot {
   position: absolute;
-  bottom: 3px;
+  bottom: -2px;
   left: 50%;
   transform: translateX(-50%);
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: transparent;
 }
 
 .dock-item.running .running-dot,
-.dock-item[data-app="brave"] .running-dot {
-  background: var(--panel-fg);
-  opacity: 0.9;
-  box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
+.dock-item[data-app="brave"] .running-dot,
+.dock-item[data-app="steam"] .running-dot {
+  background: var(--accent);
+  opacity: 1;
+  box-shadow: 0 0 6px rgba(53, 132, 228, 0.45);
 }
 
 /* ----- Layout: Dash to Dock (default, bottom floating) ----- */
@@ -1368,11 +1494,11 @@ html[data-night-light="on"] .night-light-overlay::after {
 
 .layout-left .running-dot {
   bottom: auto;
-  left: 3px;
+  left: -2px;
   top: 50%;
   transform: translateY(-50%);
-  width: 4px;
-  height: 4px;
+  width: 6px;
+  height: 6px;
 }
 
 .layout-left .dock-tooltip {
@@ -1390,11 +1516,6 @@ html[data-night-light="on"] .night-light-overlay::after {
 .layout-left .nautilus-window {
   width: min(980px, calc(100vw - var(--side-panel-width) - 48px));
   height: min(620px, calc(100vh - var(--panel-height) - 40px));
-}
-
-.layout-left .layout-chooser {
-  /* Keep chooser optically centered in the free desktop area */
-  left: calc(50% + var(--side-panel-width) / 2);
 }
 
 /* ========== Nautilus (Files) window ========== */
@@ -1539,7 +1660,7 @@ html[data-night-light="on"] .night-light-overlay::after {
   transition: background var(--transition-fast);
 }
 
-/* Nautilus sidebar uses Adwaita symbolic place icons */
+/* Nautilus sidebar uses Yaru symbolic place icons */
 .sidebar-icon,
 .nautilus-window .sidebar-icon {
   width: 16px;
@@ -1796,10 +1917,24 @@ html[data-night-light="on"] .night-light-overlay::after {
 /* When overview is open, dock stays usable (toggle Show Apps) */
 .desktop.overview-open .dock {
   z-index: 95;
+  /* Avoid extra backdrop-filter layers while overview is open (tab-hover flash) */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.desktop.overview-open .dock-inner {
+  background: rgba(20, 20, 20, 0.92);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .desktop.overview-open .desktop-hint {
   opacity: 0;
+}
+
+/* Overview scrim sits under the panel; keep panel fully opaque and on top */
+.desktop.overview-open .top-bar {
+  background: #1c1c1c;
 }
 
 /* Responsive */
@@ -1813,6 +1948,13 @@ html[data-night-light="on"] .night-light-overlay::after {
     right: 10px;
   }
 
+  .layout-chooser {
+    top: calc(var(--panel-height) + 8px);
+    right: 8px;
+    transform: scale(0.9);
+    transform-origin: top right;
+  }
+
   :root {
     --dock-icon: 42px;
   }
@@ -1820,9 +1962,19 @@ html[data-night-light="on"] .night-light-overlay::after {
 
 /* ========== Light theme surface overrides ========== */
 
-/* QS range track (inactive portion) */
+/* QS volume slider — light surface: grey track, black thumb */
 html[data-theme="light"] .qs-range {
-  background: rgba(0, 0, 0, 0.12);
+  background: #c6c6c6;
+}
+
+html[data-theme="light"] .qs-range::-webkit-slider-thumb {
+  background: #1a1a1a;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+}
+
+html[data-theme="light"] .qs-range::-moz-range-thumb {
+  background: #1a1a1a;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
 }
 
 /* Calendar / media chips on light surface */

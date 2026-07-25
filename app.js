@@ -5,34 +5,14 @@
 
 const APPS = [
   {
-    id: "writer",
-    name: "LibreOffice Writer",
-    icon: "assets/apps/org.libreoffice.LibreOffice.writer.png",
+    id: "contacts",
+    name: "Address Book",
+    icon: "assets/apps/org.gnome.Contacts.png",
   },
   {
-    id: "calc",
-    name: "LibreOffice Calc",
-    icon: "assets/apps/org.libreoffice.LibreOffice.calc.png",
-  },
-  {
-    id: "impress",
-    name: "LibreOffice Impress",
-    icon: "assets/apps/org.libreoffice.LibreOffice.impress.png",
-  },
-  {
-    id: "draw",
-    name: "LibreOffice Draw",
-    icon: "assets/apps/org.libreoffice.LibreOffice.draw.png",
-  },
-  {
-    id: "base",
-    name: "LibreOffice Base",
-    icon: "assets/apps/org.libreoffice.LibreOffice.base.png",
-  },
-  {
-    id: "math",
-    name: "LibreOffice Math",
-    icon: "assets/apps/org.libreoffice.LibreOffice.math.png",
+    id: "scanner",
+    name: "Document Scanner",
+    icon: "assets/apps/org.gnome.SimpleScan.png",
   },
   {
     id: "startcenter",
@@ -40,25 +20,76 @@ const APPS = [
     icon: "assets/apps/org.libreoffice.LibreOffice.startcenter.png",
   },
   {
+    id: "base",
+    name: "LibreOffice Base",
+    icon: "assets/apps/org.libreoffice.LibreOffice.base.png",
+  },
+  {
+    id: "calc",
+    name: "LibreOffice Calc",
+    icon: "assets/apps/org.libreoffice.LibreOffice.calc.png",
+  },
+  {
+    id: "draw",
+    name: "LibreOffice Draw",
+    icon: "assets/apps/org.libreoffice.LibreOffice.draw.png",
+  },
+  {
+    id: "impress",
+    name: "LibreOffice Impress",
+    icon: "assets/apps/org.libreoffice.LibreOffice.impress.png",
+  },
+  {
+    id: "math",
+    name: "LibreOffice Math",
+    icon: "assets/apps/org.libreoffice.LibreOffice.math.png",
+  },
+  {
+    id: "writer",
+    name: "LibreOffice Writer",
+    icon: "assets/apps/org.libreoffice.LibreOffice.writer.png",
+  },
+  {
     id: "papers",
     name: "Papers",
     icon: "assets/apps/org.gnome.Papers.png",
-  },
-  {
-    id: "contacts",
-    name: "Address Book",
-    icon: "assets/apps/org.gnome.Contacts.png",
   },
 ];
 
 const desktop = document.getElementById("desktop");
 const workspaceIndicators = document.getElementById("workspace-indicators");
+const workspaceThumbnails = document.getElementById("workspace-thumbnails");
 const showAppsBtn = document.getElementById("show-apps-btn");
 const appMenu = document.getElementById("app-menu");
 const appMenuBackdrop = document.getElementById("app-menu-backdrop");
 const appGrid = document.getElementById("app-grid");
 const appSearch = document.getElementById("app-search");
 const appEmpty = document.getElementById("app-empty");
+
+/** Active workspace index (0-based). Synced with top-bar dots and overview thumbs. */
+let activeWorkspace = 0;
+
+function setActiveWorkspace(index) {
+  const thumbs = workspaceThumbnails
+    ? workspaceThumbnails.querySelectorAll(".workspace-thumb")
+    : [];
+  const indicators = workspaceIndicators
+    ? workspaceIndicators.querySelectorAll(".workspace-indicator")
+    : [];
+  const count = Math.max(thumbs.length, indicators.length);
+  if (count === 0) return;
+  activeWorkspace = Math.max(0, Math.min(index, count - 1));
+
+  thumbs.forEach((thumb, i) => {
+    const on = i === activeWorkspace;
+    thumb.classList.toggle("active", on);
+    thumb.setAttribute("aria-selected", on ? "true" : "false");
+  });
+
+  indicators.forEach((dot, i) => {
+    dot.classList.toggle("active", i === activeWorkspace);
+  });
+}
 const systemMenuBtn = document.getElementById("system-menu-btn");
 const quickSettings = document.getElementById("quick-settings");
 const powerMenuBtn = document.getElementById("power-menu-btn");
@@ -308,6 +339,19 @@ workspaceIndicators.addEventListener("click", (e) => {
   toggleAppMenu();
 });
 
+// Overview workspace previews — select workspace, close overview (GNOME-like)
+if (workspaceThumbnails) {
+  workspaceThumbnails.addEventListener("click", (e) => {
+    const thumb = e.target.closest(".workspace-thumb");
+    if (!thumb) return;
+    e.stopPropagation();
+    const index = Number(thumb.dataset.workspace);
+    if (Number.isNaN(index)) return;
+    setActiveWorkspace(index);
+    closeAppMenu();
+  });
+}
+
 showAppsBtn.addEventListener("click", (e) => {
   e.stopPropagation();
   toggleAppMenu();
@@ -346,9 +390,25 @@ document.querySelectorAll(".qs-toggle").forEach((btn) => {
       setDarkStyle(on);
     } else if (btn.dataset.toggle === "night") {
       setNightLight(on);
+    } else if (btn.dataset.toggle === "power-mode") {
+      updatePowerMode(on);
     }
   });
 });
+
+/** Power Mode: on = Performance, off = Balanced */
+function updatePowerMode(performance) {
+  const btn = document.querySelector('.qs-toggle[data-toggle="power-mode"]');
+  if (!btn) return;
+  const sub = btn.querySelector(".qs-toggle-sub");
+  const icon = btn.querySelector("img.sym");
+  if (sub) sub.textContent = performance ? "Performance" : "Balanced";
+  if (icon) {
+    icon.src = performance
+      ? "assets/status/power-profile-performance-symbolic.svg"
+      : "assets/status/power-profile-balanced-symbolic.svg";
+  }
+}
 
 /* ---------- Dark / light style ---------- */
 
@@ -362,6 +422,7 @@ function setDarkStyle(enabled) {
     darkToggle.classList.toggle("active", enabled);
     darkToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
   }
+  if (typeof updateVolumeFill === "function") updateVolumeFill();
 }
 
 /* ---------- Night Light (warm color temperature) ---------- */
@@ -386,10 +447,17 @@ function setNightLight(enabled) {
 setDarkStyle(true);
 setNightLight(false);
 
-// Volume slider fill (GNOME-style blue track)
+// Volume slider fill — blue filled (left) + grey track (right); thumb via CSS
 function updateVolumeFill() {
   const pct = Number(volumeSlider.value);
-  volumeSlider.style.background = `linear-gradient(to right, #99c1f1 ${pct}%, rgba(255,255,255,0.18) ${pct}%)`;
+  const light =
+    document.documentElement.getAttribute("data-theme") === "light";
+  if (light) {
+    // Light QS: accent blue left, grey right; black thumb in CSS
+    volumeSlider.style.background = `linear-gradient(to right, #3584e4 ${pct}%, #c6c6c6 ${pct}%)`;
+  } else {
+    volumeSlider.style.background = `linear-gradient(to right, #99c1f1 ${pct}%, rgba(255,255,255,0.18) ${pct}%)`;
+  }
 }
 volumeSlider.addEventListener("input", updateVolumeFill);
 updateVolumeFill();
@@ -555,7 +623,7 @@ const ICON_PLACES = "assets/places/";
 /**
  * Virtual filesystem.
  * - `icon`: full-color icon for grid/list content
- * - `sidebarIcon`: symbolic icon for the Nautilus places sidebar (GNOME style)
+ * - `sidebarIcon`: symbolic icon for the Nautilus places sidebar (Yaru)
  * - folders have `children` (ids); files use `type: "file"` with size/modified
  * Dummy files match the other DE mockups for consistency.
  */
@@ -565,10 +633,12 @@ const FS_NODES = {
     name: "Home",
     icon: ICON_PLACES + "user-home.png",
     sidebarIcon: ICON_PLACES + "user-home-symbolic.svg",
+    /* Alphabetical by display name (sidebar order is independent) */
     children: [
       "desktop",
       "documents",
       "downloads",
+      "dropbox",
       "music",
       "pictures",
       "public",
@@ -668,14 +738,49 @@ const FS_NODES = {
     sidebarIcon: ICON_PLACES + "folder-publicshare-symbolic.svg",
     children: [],
   },
+  dropbox: {
+    id: "dropbox",
+    name: "Dropbox",
+    icon: ICON_PLACES + "folder-dropbox.png",
+    sidebarIcon: ICON_PLACES + "folder-symbolic.svg",
+    children: [],
+    emptyTitle: "Folder is Empty",
+    emptySub: "",
+  },
+  gamedrive: {
+    id: "gamedrive",
+    name: "Game_Drive",
+    icon: ICON_PLACES + "drive-harddisk-symbolic.svg",
+    sidebarIcon: ICON_PLACES + "drive-harddisk-symbolic.svg",
+    children: ["steam-folder", "steam-library"],
+  },
+  "steam-folder": {
+    id: "steam-folder",
+    name: "Steam_Folder",
+    icon: ICON_PLACES + "folder.png",
+    sidebarIcon: ICON_PLACES + "folder-symbolic.svg",
+    children: [],
+  },
+  "steam-library": {
+    id: "steam-library",
+    name: "SteamLibrary",
+    icon: ICON_PLACES + "folder.png",
+    sidebarIcon: ICON_PLACES + "folder-symbolic.svg",
+    children: [],
+  },
   truenas: {
     id: "truenas",
     name: "truenas.local",
     icon: ICON_PLACES + "drive-harddisk-symbolic.svg",
     sidebarIcon: ICON_PLACES + "drive-harddisk-symbolic.svg",
+    children: ["backups"],
+  },
+  backups: {
+    id: "backups",
+    name: "Backups",
+    icon: ICON_PLACES + "folder.png",
+    sidebarIcon: ICON_PLACES + "folder-symbolic.svg",
     children: [],
-    emptyTitle: "Folder is Empty",
-    emptySub: "",
   },
 
   /* Nested folders */
@@ -764,6 +869,7 @@ const SIDEBAR_PLACES = [
     section: null,
     separator: true,
     items: [
+      "dropbox",
       "documents",
       "music",
       "pictures",
@@ -774,7 +880,7 @@ const SIDEBAR_PLACES = [
   {
     section: null,
     separator: true,
-    items: ["truenas"],
+    items: ["gamedrive", "truenas"],
   },
 ];
 
@@ -920,6 +1026,7 @@ function getParentId(id) {
     "videos",
     "templates",
     "public",
+    "dropbox",
   ]);
   if (underHome.has(id)) return "home";
   return null;

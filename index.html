@@ -43,6 +43,7 @@
       <button type="button" class="workspace-indicators" id="workspace-indicators" aria-expanded="false" aria-controls="app-menu" title="Overview" aria-label="Overview">
         <span class="workspace-indicator active" aria-hidden="true"></span>
         <span class="workspace-indicator" aria-hidden="true"></span>
+        <span class="workspace-indicator" aria-hidden="true"></span>
       </button>
 
       <button type="button" class="clock-btn" id="clock-btn" aria-label="Date and time">
@@ -50,9 +51,13 @@
       </button>
 
       <div class="status-area">
+        <!-- App indicators (Steam tray emblem — mono tray mark, not app icon) -->
+        <span class="tray-indicator" title="Steam" aria-label="Steam">
+          <img class="status-icon tray-steam" src="assets/status/steam_tray_mono.png" alt="" draggable="false" />
+        </span>
         <button type="button" class="system-menu-btn" id="system-menu-btn" aria-expanded="false" aria-controls="quick-settings" title="System menu">
           <span class="status-icons" aria-hidden="true">
-            <!-- Network (wired), volume, power — match GNOME top-panel tray -->
+            <!-- Network (wired), volume, power — Yaru tray icons -->
             <img class="status-icon sym" src="assets/status/network-wired-symbolic.svg" alt="" draggable="false" />
             <img class="status-icon sym" src="assets/status/audio-volume-medium-symbolic.svg" alt="" draggable="false" />
             <img class="status-icon sym" src="assets/status/system-shutdown-symbolic.svg" alt="" draggable="false" />
@@ -61,7 +66,7 @@
       </div>
     </header>
 
-    <!-- Quick Settings (GNOME 50 system menu) — icons from GNOME Shell / Adwaita -->
+    <!-- Quick Settings (GNOME 50 system menu) — icons from Yaru + GNOME Shell -->
     <div class="quick-settings" id="quick-settings" role="dialog" aria-label="Quick Settings" hidden>
       <div class="qs-toolbar">
         <div class="qs-toolbar-group">
@@ -245,6 +250,19 @@
           <input type="search" class="app-search" id="app-search" placeholder="Type to search" autocomplete="off" spellcheck="false" />
         </div>
 
+        <!-- Workspace previews — horizontal row under search (GNOME overview) -->
+        <div class="workspace-thumbnails" id="workspace-thumbnails" role="listbox" aria-label="Workspaces">
+          <button type="button" class="workspace-thumb active" role="option" aria-selected="true" data-workspace="0" title="Workspace 1" aria-label="Workspace 1">
+            <img class="workspace-thumb-img" src="assets/workspaces/workspace-1.jpeg" alt="" draggable="false" />
+          </button>
+          <button type="button" class="workspace-thumb" role="option" aria-selected="false" data-workspace="1" title="Workspace 2" aria-label="Workspace 2">
+            <img class="workspace-thumb-img" src="assets/workspaces/workspace-2.jpeg" alt="" draggable="false" />
+          </button>
+          <button type="button" class="workspace-thumb" role="option" aria-selected="false" data-workspace="2" title="Workspace 3" aria-label="Workspace 3">
+            <img class="workspace-thumb-img" src="assets/workspaces/workspace-3.jpeg" alt="" draggable="false" />
+          </button>
+        </div>
+
         <div class="app-grid" id="app-grid" role="list">
           <!-- Filled by JS -->
         </div>
@@ -271,6 +289,7 @@
         <button type="button" class="dock-item" data-app="steam" title="Steam">
           <img src="assets/Steam_icon.png" alt="" draggable="false" />
           <span class="dock-tooltip">Steam</span>
+          <span class="running-dot" aria-hidden="true"></span>
         </button>
 
         <div class="dock-separator" aria-hidden="true"></div>
