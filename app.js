@@ -58,7 +58,9 @@ const APPS = [
 
 const desktop = document.getElementById("desktop");
 const workspaceIndicators = document.getElementById("workspace-indicators");
-const workspaceThumbnails = document.getElementById("workspace-thumbnails");
+const workspaceLayer = document.getElementById("workspace-layer");
+const workspaceTrack = document.getElementById("workspace-track");
+const workspaceHitStrip = document.getElementById("workspace-hit-strip");
 const showAppsBtn = document.getElementById("show-apps-btn");
 const appMenu = document.getElementById("app-menu");
 const appMenuBackdrop = document.getElementById("app-menu-backdrop");
@@ -66,30 +68,384 @@ const appGrid = document.getElementById("app-grid");
 const appSearch = document.getElementById("app-search");
 const appEmpty = document.getElementById("app-empty");
 
-/** Active workspace index (0-based). Synced with top-bar dots and overview thumbs. */
+/* ---------- Workspaces (GNOME Shell parity) ----------
+ * Constants from gnome-shell:
+ *   ANIMATION_TIME / SIDE_CONTROLS / WINDOW_ANIMATION = 250ms
+ *   SCROLL_TIMEOUT_TIME = 150ms
+ *   SMALL_WORKSPACE_RATIO = 0.15
+ *   WORKSPACE_MIN_SPACING = 24
+ *   WORKSPACE_SPACING (switch gap) = 100
+ *   WORKSPACE_INACTIVE_SCALE = 0.94
+ */
+const WORKSPACE_COUNT = 3;
+const OVERVIEW_MS = 250;
+const SWITCH_MS = 250;
+const SCROLL_TIMEOUT_MS = 150;
+const SMALL_WORKSPACE_RATIO = 0.15;
+const WS_MIN_SPACING = 24;
+const WS_SWITCH_GAP = 100;
+
+/** Active workspace index (0-based). */
 let activeWorkspace = 0;
+/** Fractional progress for pill morph (tracks active during animation). */
+let workspaceProgress = 0;
+let canWorkspaceScroll = true;
+let overviewOpen = false;
+let overviewAnimating = false;
+let switchAnimating = false;
+let overviewCloseTimer = 0;
+let switchAnimTimer = 0;
+/** Workspace index that currently hosts Nautilus (if open). */
+let nautilusWorkspace = 0;
 
-function setActiveWorkspace(index) {
-  const thumbs = workspaceThumbnails
-    ? workspaceThumbnails.querySelectorAll(".workspace-thumb")
+const workspacePanes = () =>
+  workspaceTrack
+    ? [...workspaceTrack.querySelectorAll(".workspace-pane")]
     : [];
-  const indicators = workspaceIndicators
-    ? workspaceIndicators.querySelectorAll(".workspace-indicator")
-    : [];
-  const count = Math.max(thumbs.length, indicators.length);
-  if (count === 0) return;
-  activeWorkspace = Math.max(0, Math.min(index, count - 1));
 
-  thumbs.forEach((thumb, i) => {
-    const on = i === activeWorkspace;
-    thumb.classList.toggle("active", on);
-    thumb.setAttribute("aria-selected", on ? "true" : "false");
-  });
+function panelHeightPx() {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue("--panel-height")
+    .trim();
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? n : 32;
+}
 
-  indicators.forEach((dot, i) => {
-    dot.classList.toggle("active", i === activeWorkspace);
+function getWorkArea() {
+  const rect = desktop.getBoundingClientRect();
+  const top = panelHeightPx();
+  return {
+    top,
+    left: 0,
+    width: Math.max(1, rect.width),
+    height: Math.max(1, rect.height - top),
+    desktopTop: rect.top,
+    desktopLeft: rect.left,
+  };
+}
+
+/**
+ * App-grid workspace strip geometry (overviewControls + workspacesView).
+ * height ≈ 15% of work area; spacing = 24px; side padding = spacing.
+ *
+ * Strip top is computed from fixed CSS (not getBoundingClientRect on animated
+ * overview chrome) so the open animation doesn't end with a remeasure jump.
+ * Matches: .app-menu padding-top = panel + 28; search h=44; .app-search-wrap margin-bottom=28.
+ */
+function getOverviewStripGeometry(workArea) {
+  const n = WORKSPACE_COUNT;
+  const spacing = WS_MIN_SPACING;
+  const stripH = Math.round(workArea.height * SMALL_WORKSPACE_RATIO);
+  const aspect = workArea.width / workArea.height;
+  const stripTop = panelHeightPx() + 28 + 44 + 28;
+
+  const availableWidth = workArea.width - spacing * (n + 1);
+  let paneW = availableWidth / n;
+  let paneH = paneW / aspect;
+  if (paneH > stripH) {
+    paneH = stripH;
+    paneW = paneH * aspect;
+  }
+  // Integer sizes; derive scale from width only so height stays aspect-true
+  paneW = Math.round(paneW);
+  paneH = Math.round(paneW / aspect);
+
+  const totalW = paneW * n + spacing * (n - 1);
+  const left = Math.round((workArea.width - totalW) / 2);
+
+  return {
+    top: stripTop,
+    left,
+    paneW,
+    paneH,
+    spacing,
+    totalW,
+    height: paneH,
+    width: totalW,
+  };
+}
+
+function applyWorkspaceGeometry({ mode, progress = activeWorkspace, animate = false }) {
+  if (!workspaceLayer || !workspaceTrack) return;
+
+  const wa = getWorkArea();
+  const root = desktop.style;
+  const layer = workspaceLayer.style;
+  const track = workspaceTrack.style;
+  let contentScale = 1;
+
+  root.setProperty("--ws-full-w", `${wa.width}px`);
+  root.setProperty("--ws-full-h", `${wa.height}px`);
+
+  if (animate) {
+    desktop.classList.add("ws-animate-geometry");
+  } else {
+    desktop.classList.remove("ws-animate-geometry");
+  }
+
+  let paneW = wa.width;
+
+  if (mode === "overview") {
+    const strip = getOverviewStripGeometry(wa);
+    // Scale by width so the full work-area maps into the pane without a
+    // height mismatch (which read as a jump when the transition ended).
+    contentScale = strip.paneW / wa.width;
+    paneW = strip.paneW;
+
+    layer.top = `${strip.top}px`;
+    layer.left = `${strip.left}px`;
+    layer.width = `${strip.totalW}px`;
+    layer.height = `${strip.paneH}px`;
+
+    track.gap = `${strip.spacing}px`;
+    track.transform = "translate3d(0px, 0, 0)";
+
+    root.setProperty("--ws-hit-w", `${strip.paneW}px`);
+    root.setProperty("--ws-hit-h", `${strip.paneH}px`);
+
+    if (workspaceHitStrip) {
+      workspaceHitStrip.style.setProperty("--ws-hit-w", `${strip.paneW}px`);
+      workspaceHitStrip.style.setProperty("--ws-hit-h", `${strip.paneH}px`);
+    }
+  } else {
+    // Desktop: single-fit horizontal strip (panes full work-area width)
+    const trackX = -progress * paneW;
+
+    layer.top = `${wa.top}px`;
+    layer.left = "0px";
+    layer.width = `${wa.width}px`;
+    layer.height = `${wa.height}px`;
+
+    track.gap = "0px";
+    track.transform = `translate3d(${trackX}px, 0, 0)`;
+  }
+
+  // Per-pane size + content scale (no radius/shadow — Shell workspaces are square-edged here)
+  workspaceTrack.querySelectorAll(".workspace-pane").forEach((pane) => {
+    pane.style.width = `${paneW}px`;
+    pane.style.borderRadius = "0";
+    pane.style.boxShadow = "none";
+    const scaler = pane.querySelector(".workspace-pane-scaler");
+    if (scaler) scaler.style.transform = `scale(${contentScale})`;
   });
 }
+
+function updateWorkspaceChrome(progress = workspaceProgress) {
+  workspaceProgress = progress;
+  const panes = workspacePanes();
+  const hits = workspaceHitStrip
+    ? workspaceHitStrip.querySelectorAll(".workspace-hit")
+    : [];
+  const dots = workspaceIndicators
+    ? workspaceIndicators.querySelectorAll(".workspace-indicator")
+    : [];
+
+  panes.forEach((pane, i) => {
+    const on = i === activeWorkspace;
+    pane.classList.toggle("active", on);
+  });
+
+  hits.forEach((hit, i) => {
+    const on = i === activeWorkspace;
+    hit.classList.toggle("active", on);
+    hit.setAttribute("aria-selected", on ? "true" : "false");
+  });
+
+  dots.forEach((dot, i) => {
+    const distance = Math.abs(i - progress);
+    const expansion = Math.max(0, Math.min(1, 1 - distance));
+    dot.style.setProperty("--dot-expansion", String(expansion));
+    // aria / active class for non-animated consumers
+    dot.classList.toggle("active", Math.round(progress) === i);
+  });
+}
+
+function placeNautilusOnWorkspace() {
+  const nau = document.getElementById("nautilus-window");
+  if (!nau) return;
+  const host = document.getElementById(`workspace-windows-${nautilusWorkspace}`);
+  if (host && nau.parentElement !== host) {
+    host.appendChild(nau);
+  }
+}
+
+/**
+ * Switch workspace. Outside overview: 250ms horizontal slide.
+ * Inside overview: update active only (all panes already visible).
+ */
+function switchToWorkspace(index, { animate = true } = {}) {
+  const n = WORKSPACE_COUNT;
+  const target = Math.max(0, Math.min(n - 1, index));
+  if (target === activeWorkspace && !switchAnimating) {
+    updateWorkspaceChrome(target);
+    return;
+  }
+
+  const from = activeWorkspace;
+  activeWorkspace = target;
+
+  if (overviewOpen || overviewAnimating) {
+    // No desktop slide while overview is open (GNOME _shouldAnimate)
+    workspaceProgress = target;
+    updateWorkspaceChrome(target);
+    applyWorkspaceGeometry({ mode: "overview", progress: target, animate: false });
+    return;
+  }
+
+  if (!animate || from === target) {
+    workspaceProgress = target;
+    updateWorkspaceChrome(target);
+    applyWorkspaceGeometry({ mode: "desktop", progress: target, animate: false });
+    return;
+  }
+
+  // Desktop slide animation (250ms ease-out-cubic)
+  switchAnimating = true;
+
+  // 1) Snap to current workspace without transition
+  desktop.classList.remove("ws-animate-switch");
+  applyWorkspaceGeometry({ mode: "desktop", progress: from, animate: false });
+  void workspaceTrack.offsetWidth;
+
+  // 2) Enable transition, then move track to target
+  desktop.classList.add("ws-animate-switch");
+  requestAnimationFrame(() => {
+    applyWorkspaceGeometry({ mode: "desktop", progress: target, animate: false });
+  });
+
+  // 3) Pill expansion in lockstep with the slide
+  const start = performance.now();
+  const startProgress = from;
+  const endProgress = target;
+  updateWorkspaceChrome(startProgress);
+
+  function tick(now) {
+    const t = Math.min(1, (now - start) / SWITCH_MS);
+    // ease-out-cubic
+    const eased = 1 - Math.pow(1 - t, 3);
+    workspaceProgress = startProgress + (endProgress - startProgress) * eased;
+    updateWorkspaceChrome(workspaceProgress);
+    if (t < 1) {
+      requestAnimationFrame(tick);
+    } else {
+      workspaceProgress = endProgress;
+      updateWorkspaceChrome(endProgress);
+      switchAnimating = false;
+      desktop.classList.remove("ws-animate-switch");
+      applyWorkspaceGeometry({ mode: "desktop", progress: endProgress, animate: false });
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+function setActiveWorkspace(index, opts) {
+  switchToWorkspace(index, opts);
+}
+
+function handleWorkspaceScroll(deltaY, deltaX = 0) {
+  if (!canWorkspaceScroll) return;
+  if (overviewAnimating) return;
+
+  let dir = 0;
+  if (Math.abs(deltaY) >= Math.abs(deltaX)) {
+    if (deltaY === 0) return;
+    // Wheel down → next (matches Clutter.ScrollDirection.DOWN → RIGHT)
+    dir = deltaY > 0 ? 1 : -1;
+  } else {
+    if (deltaX === 0) return;
+    dir = deltaX > 0 ? 1 : -1;
+  }
+
+  const next = activeWorkspace + dir;
+  if (next < 0 || next >= WORKSPACE_COUNT) return;
+
+  canWorkspaceScroll = false;
+  setTimeout(() => {
+    canWorkspaceScroll = true;
+  }, SCROLL_TIMEOUT_MS);
+
+  switchToWorkspace(next, { animate: !overviewOpen });
+}
+
+function initWorkspaces() {
+  placeNautilusOnWorkspace();
+  workspaceProgress = activeWorkspace;
+  updateWorkspaceChrome(activeWorkspace);
+  applyWorkspaceGeometry({ mode: "desktop", progress: activeWorkspace, animate: false });
+
+  const onWorkspaceWheel = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handleWorkspaceScroll(e.deltaY, e.deltaX);
+  };
+
+  // Scroll on workspace pills → switch (ActivitiesButton.vfunc_scroll_event)
+  if (workspaceIndicators) {
+    workspaceIndicators.addEventListener("wheel", onWorkspaceWheel, {
+      passive: false,
+    });
+  }
+
+  // Scroll on Show Apps (dash) while desktop is visible — same as Shell dash scroll
+  if (showAppsBtn) {
+    showAppsBtn.addEventListener(
+      "wheel",
+      (e) => {
+        // Only when not in overview (user asked for desktop behaviour on this control)
+        if (overviewOpen || overviewAnimating) return;
+        onWorkspaceWheel(e);
+      },
+      { passive: false }
+    );
+  }
+
+  // Scroll over live workspace previews while app menu is open
+  if (workspaceLayer) {
+    workspaceLayer.addEventListener(
+      "wheel",
+      (e) => {
+        if (!overviewOpen) return;
+        onWorkspaceWheel(e);
+      },
+      { passive: false }
+    );
+  }
+
+  // Click workspace card in app menu → activate + leave overview
+  if (workspaceHitStrip) {
+    workspaceHitStrip.addEventListener("click", (e) => {
+      const hit = e.target.closest(".workspace-hit");
+      if (!hit) return;
+      e.stopPropagation();
+      const index = Number(hit.dataset.workspace);
+      if (Number.isNaN(index)) return;
+      enterWorkspaceFromOverview(index);
+    });
+  }
+
+  // Also allow clicking the live panes in overview
+  if (workspaceTrack) {
+    workspaceTrack.addEventListener("click", (e) => {
+      if (!overviewOpen) return;
+      const pane = e.target.closest(".workspace-pane");
+      if (!pane) return;
+      e.stopPropagation();
+      const index = Number(pane.dataset.workspace);
+      if (Number.isNaN(index)) return;
+      enterWorkspaceFromOverview(index);
+    });
+  }
+
+  window.addEventListener("resize", () => {
+    if (overviewAnimating) return;
+    applyWorkspaceGeometry({
+      mode: overviewOpen ? "overview" : "desktop",
+      progress: activeWorkspace,
+      animate: false,
+    });
+  });
+}
+
 const systemMenuBtn = document.getElementById("system-menu-btn");
 const quickSettings = document.getElementById("quick-settings");
 const powerMenuBtn = document.getElementById("power-menu-btn");
@@ -263,29 +619,135 @@ function setExpanded(btn, open) {
   if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
 }
 
-function closeAppMenu() {
-  appMenu.hidden = true;
-  desktop.classList.remove("overview-open");
-  setExpanded(showAppsBtn, false);
-  setExpanded(workspaceIndicators, false);
-  appSearch.value = "";
-  renderApps();
+function isAppMenuOpen() {
+  return overviewOpen || (!appMenu.hidden && !appMenu.classList.contains("is-closing"));
 }
 
+/**
+ * Open app grid overview: live workspaces scale from full work-area into the
+ * strip under search (HIDDEN → APP_GRID box interpolation, 250ms ease-out-sine).
+ */
 function openAppMenu() {
+  if (overviewOpen || overviewAnimating) return;
+
   closeQuickSettings();
   closeCalendar();
+
+  if (overviewCloseTimer) {
+    clearTimeout(overviewCloseTimer);
+    overviewCloseTimer = 0;
+  }
+
+  overviewAnimating = true;
+  desktop.classList.remove("overview-closing");
+  appMenu.classList.remove("is-closing");
   appMenu.hidden = false;
-  desktop.classList.add("overview-open");
+
+  // Lay out hit-strip first so strip geometry can be measured
   setExpanded(showAppsBtn, true);
   setExpanded(workspaceIndicators, true);
-  // Focus search after paint
-  requestAnimationFrame(() => appSearch.focus());
+
+  // Start at desktop geometry (no transition), then animate to overview
+  desktop.classList.remove("ws-animate-geometry", "overview-open");
+  applyWorkspaceGeometry({ mode: "desktop", progress: activeWorkspace, animate: false });
+  void workspaceLayer.offsetWidth;
+
+  desktop.classList.add("overview-animating", "ws-animate-geometry", "overview-open");
+  overviewOpen = true;
+
+  // One frame later: apply target overview geometry so CSS transitions run.
+  // Geometry is stable (no live remeasure of animated chrome) to avoid an end jump.
+  requestAnimationFrame(() => {
+    applyWorkspaceGeometry({
+      mode: "overview",
+      progress: activeWorkspace,
+      animate: true,
+    });
+    updateWorkspaceChrome(activeWorkspace);
+    try {
+      appSearch.focus({ preventScroll: true });
+    } catch {
+      appSearch.focus();
+    }
+  });
+
+  window.setTimeout(() => {
+    overviewAnimating = false;
+    desktop.classList.remove("overview-animating");
+    // Drop transition flags only — do not re-apply geometry (that caused a visible jump)
+    desktop.classList.remove("ws-animate-geometry");
+  }, OVERVIEW_MS + 30);
+}
+
+/**
+ * Leave overview back to desktop. If `toIndex` is set, that workspace becomes
+ * active (app-grid click). Animation: strip → full work-area (250ms ease-out-quad).
+ */
+function closeAppMenu(options = {}) {
+  const { toIndex = null } = options;
+
+  if (!overviewOpen && appMenu.hidden) {
+    // Already closed — still honour forced index
+    if (toIndex != null) switchToWorkspace(toIndex, { animate: false });
+    return;
+  }
+
+  if (overviewAnimating && overviewOpen && toIndex == null) {
+    // Ignore double-close during open animation unless selecting a workspace
+  }
+
+  if (overviewCloseTimer) {
+    clearTimeout(overviewCloseTimer);
+    overviewCloseTimer = 0;
+  }
+
+  if (toIndex != null && toIndex !== activeWorkspace) {
+    activeWorkspace = Math.max(0, Math.min(WORKSPACE_COUNT - 1, toIndex));
+    workspaceProgress = activeWorkspace;
+    updateWorkspaceChrome(activeWorkspace);
+  }
+
+  overviewAnimating = true;
+  overviewOpen = false;
+
+  desktop.classList.add("overview-animating", "ws-animate-geometry", "overview-closing");
+  desktop.classList.remove("overview-open");
+  appMenu.classList.add("is-closing");
+
+  // Animate layer from current overview box to full desktop
+  applyWorkspaceGeometry({ mode: "desktop", progress: activeWorkspace, animate: true });
+
+  setExpanded(showAppsBtn, false);
+  setExpanded(workspaceIndicators, false);
+
+  overviewCloseTimer = window.setTimeout(() => {
+    overviewCloseTimer = 0;
+    appMenu.hidden = true;
+    appMenu.classList.remove("is-closing");
+    desktop.classList.remove(
+      "overview-animating",
+      "overview-closing",
+      "ws-animate-geometry"
+    );
+    overviewAnimating = false;
+    appSearch.value = "";
+    renderApps();
+    // Final desktop layout without re-running a transition (values already at end state)
+    applyWorkspaceGeometry({ mode: "desktop", progress: activeWorkspace, animate: false });
+  }, OVERVIEW_MS + 30);
+}
+
+/** Click a workspace in the app menu: activate it and leave overview. */
+function enterWorkspaceFromOverview(index) {
+  if (!overviewOpen && appMenu.hidden) return;
+  if (overviewAnimating && !overviewOpen) return;
+  closeAppMenu({ toIndex: index });
 }
 
 function toggleAppMenu() {
-  if (appMenu.hidden) openAppMenu();
-  else closeAppMenu();
+  if (overviewAnimating) return;
+  if (overviewOpen) closeAppMenu();
+  else openAppMenu();
 }
 
 function closeQuickSettings() {
@@ -333,31 +795,18 @@ function closeAll() {
 
 /* ---------- Event wiring ---------- */
 
-// Workspace indicator block = one button that toggles overview
+// Workspace indicator block: click toggles overview (scroll is wired in initWorkspaces)
 workspaceIndicators.addEventListener("click", (e) => {
   e.stopPropagation();
   toggleAppMenu();
 });
-
-// Overview workspace previews — select workspace, close overview (GNOME-like)
-if (workspaceThumbnails) {
-  workspaceThumbnails.addEventListener("click", (e) => {
-    const thumb = e.target.closest(".workspace-thumb");
-    if (!thumb) return;
-    e.stopPropagation();
-    const index = Number(thumb.dataset.workspace);
-    if (Number.isNaN(index)) return;
-    setActiveWorkspace(index);
-    closeAppMenu();
-  });
-}
 
 showAppsBtn.addEventListener("click", (e) => {
   e.stopPropagation();
   toggleAppMenu();
 });
 
-appMenuBackdrop.addEventListener("click", closeAppMenu);
+appMenuBackdrop.addEventListener("click", () => closeAppMenu());
 
 appSearch.addEventListener("input", () => {
   renderApps(appSearch.value);
@@ -501,10 +950,13 @@ document.querySelectorAll(".dock-item[data-app]").forEach((item) => {
   });
 });
 
-// Prevent popovers from closing via document click
+// Prevent popovers / overview chrome from closing via document click
 quickSettings.addEventListener("click", (e) => e.stopPropagation());
 powerMenu.addEventListener("click", (e) => e.stopPropagation());
 calendarPopover.addEventListener("click", (e) => e.stopPropagation());
+document.querySelector(".app-menu-content")?.addEventListener("click", (e) => {
+  e.stopPropagation();
+});
 
 // Click outside closes shell panels (not app windows)
 document.addEventListener("click", () => {
@@ -518,7 +970,7 @@ document.addEventListener("keydown", (e) => {
       powerMenu.hidden = true;
       return;
     }
-    if (!appMenu.hidden || !quickSettings.hidden || !calendarPopover.hidden) {
+    if (overviewOpen || !appMenu.hidden || !quickSettings.hidden || !calendarPopover.hidden) {
       closeAll();
       return;
     }
@@ -546,6 +998,7 @@ document.addEventListener("keydown", (e) => {
 
   // Type-to-search when overview closed: open it
   if (
+    !overviewOpen &&
     appMenu.hidden &&
     nautilusWindow.hidden &&
     e.key.length === 1 &&
@@ -911,7 +1364,19 @@ function openNautilus() {
   closeAppMenu();
   closeQuickSettings();
   closeCalendar();
+  // Windows open on the active workspace (GNOME-like)
+  nautilusWorkspace = activeWorkspace;
+  nautilusWindow.dataset.workspace = String(nautilusWorkspace);
+  placeNautilusOnWorkspace();
   nautilusWindow.hidden = false;
+  // One-shot entry fade — do not leave a permanent animation that restarts
+  // when overview classes are removed (that caused a blue wallpaper flash).
+  nautilusWindow.classList.remove("is-opening");
+  void nautilusWindow.offsetWidth;
+  nautilusWindow.classList.add("is-opening");
+  const clearOpening = () => nautilusWindow.classList.remove("is-opening");
+  nautilusWindow.addEventListener("animationend", clearOpening, { once: true });
+  window.setTimeout(clearOpening, 200);
   dockFiles.classList.add("running");
   nauHistory = ["home"];
   nauHistoryIndex = 0;
@@ -927,6 +1392,7 @@ function openNautilus() {
 
 function closeNautilus() {
   nautilusWindow.hidden = true;
+  nautilusWindow.classList.remove("is-opening");
   dockFiles.classList.remove("running");
   setNautilusSearchOpen(false);
   nauSelectedId = null;
@@ -1234,3 +1700,6 @@ nautilusWindow.addEventListener("click", (e) => {
 
 // Don't open overview type-to-search while typing in Nautilus
 nauSearchInput.addEventListener("click", (e) => e.stopPropagation());
+
+/* Boot workspace layer (must run after DOM + nautilus node exist) */
+initWorkspaces();

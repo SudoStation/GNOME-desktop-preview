@@ -12,10 +12,39 @@
 </head>
 <body>
   <div id="desktop" class="desktop layout-dash" data-layout="dash" aria-label="GNOME desktop preview">
-    <!-- Wallpaper -->
-    <div class="wallpaper" role="presentation"></div>
+    <!-- Fallback wallpaper (visible under overview scrim / empty chrome) -->
+    <div class="wallpaper wallpaper-root" role="presentation" aria-hidden="true"></div>
     <!-- Night Light warm overlay (toggled via Quick Settings) -->
     <div class="night-light-overlay" id="night-light-overlay" aria-hidden="true"></div>
+
+    <!--
+      Live workspaces (GNOME-like):
+      - Desktop: horizontal track, one pane fills the work area
+      - App overview: same panes shrink into the workspace strip under search
+    -->
+    <div class="workspace-layer" id="workspace-layer" aria-hidden="false">
+      <div class="workspace-track" id="workspace-track">
+        <div class="workspace-pane active" data-workspace="0" id="workspace-pane-0">
+          <div class="workspace-pane-scaler">
+            <div class="workspace-pane-bg" role="presentation"></div>
+            <!-- Windows for workspace 0 are reparented here (e.g. Nautilus) -->
+            <div class="workspace-pane-windows" id="workspace-windows-0"></div>
+          </div>
+        </div>
+        <div class="workspace-pane" data-workspace="1" id="workspace-pane-1">
+          <div class="workspace-pane-scaler">
+            <div class="workspace-pane-bg" role="presentation"></div>
+            <div class="workspace-pane-windows" id="workspace-windows-1"></div>
+          </div>
+        </div>
+        <div class="workspace-pane" data-workspace="2" id="workspace-pane-2">
+          <div class="workspace-pane-scaler">
+            <div class="workspace-pane-bg" role="presentation"></div>
+            <div class="workspace-pane-windows" id="workspace-windows-2"></div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Layout chooser (preview UI — not part of GNOME itself) -->
     <div class="layout-chooser" id="layout-chooser" role="group" aria-label="Desktop layout">
@@ -40,11 +69,11 @@
 
     <!-- Top panel (GNOME Shell 50) -->
     <header class="top-bar" role="banner">
-      <!-- Workspace indicators (visual only) — one control that toggles overview -->
-      <button type="button" class="workspace-indicators" id="workspace-indicators" aria-expanded="false" aria-controls="app-menu" title="Overview" aria-label="Overview">
-        <span class="workspace-indicator active" aria-hidden="true"></span>
-        <span class="workspace-indicator" aria-hidden="true"></span>
-        <span class="workspace-indicator" aria-hidden="true"></span>
+      <!-- Workspace indicators: click toggles overview; scroll switches workspace (GNOME 45+) -->
+      <button type="button" class="workspace-indicators" id="workspace-indicators" aria-expanded="false" aria-controls="app-menu" title="Overview — scroll to switch workspace" aria-label="Overview">
+        <span class="workspace-indicator" data-workspace="0" aria-hidden="true"></span>
+        <span class="workspace-indicator" data-workspace="1" aria-hidden="true"></span>
+        <span class="workspace-indicator" data-workspace="2" aria-hidden="true"></span>
       </button>
 
       <button type="button" class="clock-btn" id="clock-btn" aria-label="Date and time">
@@ -251,17 +280,14 @@
           <input type="search" class="app-search" id="app-search" placeholder="Type to search" autocomplete="off" spellcheck="false" />
         </div>
 
-        <!-- Workspace previews — horizontal row under search (GNOME overview) -->
-        <div class="workspace-thumbnails" id="workspace-thumbnails" role="listbox" aria-label="Workspaces">
-          <button type="button" class="workspace-thumb active" role="option" aria-selected="true" data-workspace="0" title="Workspace 1" aria-label="Workspace 1">
-            <img class="workspace-thumb-img" src="assets/workspaces/workspace-1.jpeg" alt="" draggable="false" />
-          </button>
-          <button type="button" class="workspace-thumb" role="option" aria-selected="false" data-workspace="1" title="Workspace 2" aria-label="Workspace 2">
-            <img class="workspace-thumb-img" src="assets/workspaces/workspace-2.jpeg" alt="" draggable="false" />
-          </button>
-          <button type="button" class="workspace-thumb" role="option" aria-selected="false" data-workspace="2" title="Workspace 3" aria-label="Workspace 3">
-            <img class="workspace-thumb-img" src="assets/workspaces/workspace-3.jpeg" alt="" draggable="false" />
-          </button>
+        <!--
+          Live workspace strip is .workspace-layer (scaled into place under search).
+          Invisible hit-targets keep flow layout for app-grid spacing and receive clicks.
+        -->
+        <div class="workspace-hit-strip" id="workspace-hit-strip" role="listbox" aria-label="Workspaces">
+          <button type="button" class="workspace-hit" role="option" aria-selected="true" data-workspace="0" title="Workspace 1" aria-label="Workspace 1"></button>
+          <button type="button" class="workspace-hit" role="option" aria-selected="false" data-workspace="1" title="Workspace 2" aria-label="Workspace 2"></button>
+          <button type="button" class="workspace-hit" role="option" aria-selected="false" data-workspace="2" title="Workspace 3" aria-label="Workspace 3"></button>
         </div>
 
         <div class="app-grid" id="app-grid" role="list">
@@ -302,8 +328,8 @@
       </div>
     </nav>
 
-    <!-- Nautilus (Files) window -->
-    <div class="nautilus-window" id="nautilus-window" role="dialog" aria-label="Files" hidden>
+    <!-- Nautilus (Files) window — reparented into active workspace pane by JS -->
+    <div class="nautilus-window" id="nautilus-window" role="dialog" aria-label="Files" hidden data-workspace="0">
       <header class="nautilus-header">
         <div class="nautilus-header-group">
           <button type="button" class="nautilus-header-btn" id="nau-back" title="Back" aria-label="Back" disabled>

@@ -34,6 +34,16 @@ html[data-theme="dark"] {
   --font: "Cantarell", "Inter", "Segoe UI", system-ui, sans-serif;
   --transition-fast: 120ms ease;
   --transition: 180ms ease;
+  /* GNOME Shell timing (overview.js / windowManager.js / workspaceAnimation.js) */
+  --overview-duration: 250ms;
+  --overview-ease-in: cubic-bezier(0.39, 0.575, 0.565, 1); /* ease-out-sine */
+  --overview-ease-out: cubic-bezier(0.25, 0.46, 0.45, 0.94); /* ease-out-quad */
+  --ws-switch-duration: 250ms;
+  --ws-switch-ease: cubic-bezier(0.215, 0.61, 0.355, 1); /* ease-out-cubic */
+  --ws-scroll-timeout: 150ms;
+  --ws-spacing: 24px;
+  --ws-switch-gap: 100px;
+  --ws-small-ratio: 0.15;
   --dock-bg: rgba(20, 20, 20, 0.72);
   --dock-border: rgba(255, 255, 255, 0.1);
   --hover-bg: rgba(255, 255, 255, 0.12);
@@ -150,15 +160,156 @@ img {
   overflow: hidden;
 }
 
-.wallpaper {
-  position: absolute;
-  inset: 0;
+.wallpaper,
+.wallpaper-root,
+.workspace-pane-bg {
   background-color: var(--wallpaper-color);
   background-image: var(--wallpaper-1), var(--wallpaper-2), var(--wallpaper-3);
   background-size: cover;
   background-position: center;
+}
+
+.wallpaper-root {
+  position: absolute;
+  inset: 0;
   z-index: 0;
   transition: background-color 220ms ease;
+}
+
+/* ========== Live workspaces ========== */
+
+.workspace-layer {
+  position: absolute;
+  /* Geometry set inline by JS (desktop full work-area ↔ overview strip) */
+  top: var(--panel-height);
+  left: 0;
+  width: 100%;
+  height: calc(100% - var(--panel-height));
+  z-index: 10;
+  overflow: hidden;
+  pointer-events: auto;
+  will-change: top, left, width, height;
+}
+
+.desktop.overview-open .workspace-layer,
+.desktop.overview-animating .workspace-layer {
+  /* Above #app-menu (92) so live cards aren't dimmed by the scrim;
+     height is only the strip so search (above) and app-grid (below) stay free. */
+  z-index: 93;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+.workspace-track {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  height: 100%;
+  gap: 0;
+  transform: translate3d(0, 0, 0);
+  will-change: transform, gap;
+}
+
+.workspace-pane {
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--ws-pane-w, 100%);
+  height: 100%;
+  overflow: hidden;
+  /* Real Shell overview workspace cards are not rounded / shadowed in app grid */
+  border-radius: 0;
+  box-shadow: none;
+  transform: scale(var(--ws-pane-scale, 1));
+  transform-origin: center center;
+  background: var(--wallpaper-color);
+  will-change: transform;
+  /* Prevent flex item from shrinking the scaler layout */
+  contain: layout style;
+}
+
+/* Inactive neighbors slightly smaller in overview (WORKSPACE_INACTIVE_SCALE = 0.94) */
+.desktop.overview-open .workspace-pane:not(.active) {
+  --ws-pane-scale: 0.94;
+}
+
+.desktop.overview-open .workspace-pane.active {
+  --ws-pane-scale: 1;
+}
+
+.workspace-pane-scaler {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--ws-full-w, 100vw);
+  height: var(--ws-full-h, 100vh);
+  transform: scale(1);
+  transform-origin: top left;
+  will-change: transform;
+}
+
+.workspace-pane-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.workspace-pane-windows {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  /* Windows are positioned relative to full work-area size inside the scaler */
+}
+
+/* Animate geometry when opening/closing overview or switching */
+.desktop.ws-animate-geometry .workspace-layer {
+  transition:
+    top var(--overview-duration) var(--overview-ease-in),
+    left var(--overview-duration) var(--overview-ease-in),
+    width var(--overview-duration) var(--overview-ease-in),
+    height var(--overview-duration) var(--overview-ease-in);
+}
+
+.desktop.ws-animate-geometry.overview-closing .workspace-layer {
+  transition-timing-function: var(--overview-ease-out);
+}
+
+.desktop.ws-animate-geometry .workspace-track {
+  transition:
+    transform var(--overview-duration) var(--overview-ease-in),
+    gap var(--overview-duration) var(--overview-ease-in);
+}
+
+.desktop.ws-animate-geometry.overview-closing .workspace-track {
+  transition-timing-function: var(--overview-ease-out);
+}
+
+.desktop.ws-animate-geometry .workspace-pane {
+  transition:
+    width var(--overview-duration) var(--overview-ease-in),
+    transform var(--overview-duration) var(--overview-ease-in);
+}
+
+.desktop.ws-animate-geometry.overview-closing .workspace-pane {
+  transition-timing-function: var(--overview-ease-out);
+}
+
+.desktop.ws-animate-geometry .workspace-pane-scaler {
+  transition: transform var(--overview-duration) var(--overview-ease-in);
+}
+
+.desktop.ws-animate-geometry.overview-closing .workspace-pane-scaler {
+  transition-timing-function: var(--overview-ease-out);
+}
+
+/* Desktop workspace switch slide */
+.desktop.ws-animate-switch .workspace-track {
+  transition: transform var(--ws-switch-duration) var(--ws-switch-ease) !important;
+}
+
+.desktop.overview-open .workspace-pane {
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 /* Night Light — warm amber cast over the whole desktop (GNOME-like) */
@@ -223,13 +374,13 @@ html[data-night-light="on"] .night-light-overlay::after {
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
 }
 
-/* GNOME 50 workspace indicators — single overview button */
+/* GNOME 45+ workspace indicators — click: overview; scroll: switch workspace */
 .workspace-indicators {
   justify-self: start;
   align-self: center;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   height: 24px;
   padding: 0 10px;
   margin-left: 6px;
@@ -248,20 +399,25 @@ html[data-night-light="on"] .night-light-overlay::after {
 }
 
 .workspace-indicator {
-  /* Inactive: small circle */
-  width: 8px;
+  /* Size driven by --dot-expansion (0..1) for continuous morph during switch */
+  --dot-expansion: 0;
+  width: calc(8px + 14px * var(--dot-expansion));
   height: 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, calc(0.45 + 0.5 * var(--dot-expansion)));
+  opacity: 1;
   flex-shrink: 0;
   pointer-events: none;
+  transform: scale(calc(0.75 + 0.25 * var(--dot-expansion)));
+  transform-origin: center center;
+  transition: none; /* JS drives expansion each frame during animation */
 }
 
-/* Active workspace: horizontal pill */
-.workspace-indicator.active {
-  width: 22px;
-  height: 8px;
-  background: rgba(255, 255, 255, 0.95);
+.workspace-indicator[data-expansion-ready="true"] {
+  transition:
+    width var(--ws-switch-duration) var(--ws-switch-ease),
+    background var(--ws-switch-duration) var(--ws-switch-ease),
+    transform var(--ws-switch-duration) var(--ws-switch-ease);
 }
 
 .clock-btn {
@@ -981,6 +1137,22 @@ html[data-night-light="on"] .night-light-overlay::after {
   z-index: 0;
   overflow: hidden;
   background: transparent;
+  opacity: 0;
+  transition: opacity var(--overview-duration) var(--overview-ease-in);
+}
+
+.desktop.overview-open .app-menu-backdrop {
+  opacity: 1;
+}
+
+.desktop.overview-closing .app-menu-backdrop {
+  opacity: 0;
+  transition-timing-function: var(--overview-ease-out);
+}
+
+/* Keep menu in layout while closing so the fade can finish */
+.app-menu.is-closing {
+  display: flex !important;
 }
 
 .app-menu-backdrop::before {
@@ -1012,18 +1184,24 @@ html[data-night-light="on"] .night-light-overlay::after {
   display: flex;
   flex-direction: column;
   align-items: center;
-  animation: overview-in 200ms ease;
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+  transition:
+    opacity var(--overview-duration) var(--overview-ease-in),
+    transform var(--overview-duration) var(--overview-ease-in);
 }
 
-@keyframes overview-in {
-  from {
-    opacity: 0;
-    transform: scale(1.04);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+.desktop.overview-open .app-menu-content {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.desktop.overview-closing .app-menu-content {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition-timing-function: var(--overview-ease-out);
 }
 
 .app-search-wrap {
@@ -1128,65 +1306,56 @@ html[data-night-light="on"] .night-light-overlay::after {
   font-size: 15px;
 }
 
-/* Workspace previews — horizontal row under search (GNOME overview) */
-.workspace-thumbnails {
+/*
+ * Invisible hit-targets for live workspace strip (same slot as .workspace-layer
+ * in overview). Size is set by JS to match SMALL_WORKSPACE_RATIO layout.
+ */
+.workspace-hit-strip {
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
   justify-content: center;
   align-items: stretch;
-  gap: 18px;
+  gap: var(--ws-spacing);
   width: 100%;
-  max-width: 1040px;
+  max-width: 100%;
   margin-bottom: 36px;
-  padding: 4px 0 8px;
+  padding: 0;
+  /* Height/width of children set via CSS vars from JS */
+  min-height: var(--ws-hit-h, 96px);
+  position: relative;
+  z-index: 2;
+  /* Live .workspace-layer sits above the menu and receives clicks */
+  pointer-events: none;
 }
 
-.workspace-thumb {
-  flex: 1 1 0;
-  min-width: 0;
-  max-width: 280px;
-  aspect-ratio: 16 / 10;
-  height: auto;
+.workspace-hit {
+  flex: 0 0 auto;
+  width: var(--ws-hit-w, 160px);
+  height: var(--ws-hit-h, 96px);
   padding: 0;
   border: none;
   border-radius: 0;
   background: transparent;
-  box-shadow: none;
-  cursor: default;
-  overflow: hidden;
+  cursor: pointer;
   outline: none;
+  pointer-events: none;
 }
 
-.workspace-thumb-img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  pointer-events: none;
-  user-select: none;
+.workspace-hit:focus-visible {
+  box-shadow: 0 0 0 3px rgba(53, 132, 228, 0.55);
 }
 
 @media (max-width: 900px) {
-  .workspace-thumbnails {
-    gap: 12px;
+  .workspace-hit-strip {
     margin-bottom: 28px;
-  }
-
-  .workspace-thumb {
-    max-width: 220px;
   }
 }
 
 @media (max-width: 640px) {
-  .workspace-thumbnails {
-    gap: 8px;
+  .workspace-hit-strip {
     margin-bottom: 22px;
-  }
-
-  .workspace-thumb {
-    max-width: none;
+    gap: 12px;
   }
 }
 
@@ -1512,21 +1681,22 @@ html[data-night-light="on"] .night-light-overlay::after {
   transform: translateY(-50%) translateX(0);
 }
 
-/* Push app windows / overview content clear of the left panel */
+/* Push app windows clear of the left panel (coords are full work-area size) */
 .layout-left .nautilus-window {
-  width: min(980px, calc(100vw - var(--side-panel-width) - 48px));
-  height: min(620px, calc(100vh - var(--panel-height) - 40px));
+  width: min(980px, calc(var(--ws-full-w, 100vw) - var(--side-panel-width) - 48px));
+  height: min(620px, calc(var(--ws-full-h, 100vh) - 40px));
 }
 
 /* ========== Nautilus (Files) window ========== */
 
 .nautilus-window {
   position: absolute;
+  /* Positioned inside .workspace-pane-windows (full work-area coords) */
   top: 10%;
   left: 50%;
   transform: translateX(-50%);
-  width: min(980px, calc(100vw - 48px));
-  height: min(620px, calc(100vh - var(--panel-height) - 100px));
+  width: min(980px, calc(var(--ws-full-w, 100vw) - 48px));
+  height: min(620px, calc(var(--ws-full-h, 100vh) - 100px));
   display: flex;
   flex-direction: column;
   background: var(--win-bg);
@@ -1535,8 +1705,22 @@ html[data-night-light="on"] .night-light-overlay::after {
   border-radius: 14px;
   box-shadow: var(--win-shadow);
   overflow: hidden;
-  z-index: 85;
+  z-index: 2;
+  /* No perpetual animation — re-running pop-in after overview closed caused a
+     blue flash (opacity 0 showed the wallpaper through the window). */
+  animation: none;
+  pointer-events: auto;
+}
+
+/* Play entry fade only when the window is first opened */
+.nautilus-window.is-opening {
   animation: pop-in 160ms ease;
+}
+
+/* While overview is open, windows are non-interactive (GNOME hides window_group) */
+.desktop.overview-open .nautilus-window,
+.desktop.overview-animating .nautilus-window {
+  pointer-events: none;
 }
 
 .nautilus-header {
