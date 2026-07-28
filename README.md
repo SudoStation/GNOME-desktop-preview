@@ -10,3 +10,16 @@ Interactive browser mockup of a GNOME Shell desktop. Static HTML/CSS/JS — no b
 ### or run locally
 1. Download the zip folder.
 2. Open `index.html` in a browser.
+
+### Things to try
+- Switch between panel and dock layout.
+- Open app menu
+- Switch workspaces
+- Open file manager
+- Open notifications panel
+- Open quick settings panel
+- Open settings app
+- Switch between light/dark mode
+
+### Future features
+- Add app center (so Linux newcomers can experience the app ecosystem)

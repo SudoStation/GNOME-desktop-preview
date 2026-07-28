@@ -898,6 +898,27 @@ function setDarkStyle(enabled) {
 
 /* ---------- Night Light (warm color temperature) ---------- */
 
+/**
+ * Map UI temp 0…100 (cool→warm) to overlay strength.
+ * GNOME range is ~4700K (cool) … ~1700K (warm); higher UI value = warmer.
+ */
+function applyNightLightTemperature(temp) {
+  const t = Math.max(0, Math.min(100, Number(temp) || 0)) / 100;
+  // Warmth: mild amber at cool end → strong orange at warm end
+  const multiplyA = 0.1 + t * 0.38;
+  const softA = 0.12 + t * 0.45;
+  // Shift hue slightly: pale peach (cool) → deep orange (warm)
+  const r = 255;
+  const g = Math.round(210 - t * 90); // 210 → 120
+  const b = Math.round(160 - t * 110); // 160 → 50
+  const root = document.documentElement;
+  root.style.setProperty("--nl-multiply-alpha", String(multiplyA));
+  root.style.setProperty("--nl-soft-alpha", String(softA));
+  root.style.setProperty("--nl-r", String(r));
+  root.style.setProperty("--nl-g", String(g));
+  root.style.setProperty("--nl-b", String(b));
+}
+
 function setNightLight(enabled) {
   document.documentElement.setAttribute(
     "data-night-light",
@@ -912,10 +933,14 @@ function setNightLight(enabled) {
   if (overlay) {
     overlay.setAttribute("aria-hidden", enabled ? "false" : "true");
   }
+  if (enabled && typeof settingsState !== "undefined") {
+    applyNightLightTemperature(settingsState.nightTemp);
+  }
 }
 
 // Defaults
 setDarkStyle(true);
+applyNightLightTemperature(62);
 setNightLight(false);
 
 // Volume slider fill — blue filled (left) + grey track (right); thumb via CSS
@@ -1965,6 +1990,12 @@ const settingsState = {
   wifiEnabled: false,
   bluetoothEnabled: true,
   nightLight: false,
+  nlSchedule: "manual", // sunset | manual — screenshot shows Times always
+  nightTemp: 62, // 0 cool … 100 warm (UI); maps to ~4700K–1700K
+  nlFromH: 20,
+  nlFromM: 0,
+  nlToH: 6,
+  nlToM: 0,
   dnd: false,
   lockScreenNotifications: true,
   volumeOutput: 58,
@@ -3332,23 +3363,7 @@ function renderSettingsSubpage(id) {
   const s = settingsState;
   switch (id) {
     case "night-light":
-      return (
-        groupStart(null) +
-        rowToggle("Night Light", "Filter out blue light to reduce eye strain at night", "nightLight", s.nightLight) +
-        groupEnd() +
-        groupStart("Schedule") +
-        rowRadio("Sunset to Sunrise", null, "nlSchedule", "sunset", true) +
-        rowRadio("Manual Schedule", null, "nlSchedule", "manual", false) +
-        groupEnd() +
-        groupStart(null) +
-        `<div class="settings-row-block">
-          <div class="settings-slider-row">
-            <div class="settings-slider-labels"><span>Color Temperature</span></div>
-            <input type="range" class="settings-range" min="0" max="100" value="60" aria-label="Color Temperature" />
-          </div>
-        </div>` +
-        groupEnd()
-      );
+      return renderNightLightPage(s);
     case "datetime":
       return (
         groupStart("Date & Time") +
@@ -3562,6 +3577,89 @@ function aboutField(label, value) {
     </div>`;
 }
 
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+/** GNOME Night Light time spin (hour or minute): + / value / − */
+function nlSpin(kind, value) {
+  return `
+    <div class="settings-nl-spin" data-nl-spin="${kind}">
+      <button type="button" class="settings-nl-spin-btn" data-nl-step="${kind}" data-dir="1" aria-label="Increase">+</button>
+      <div class="settings-nl-spin-val">${pad2(value)}</div>
+      <button type="button" class="settings-nl-spin-btn" data-nl-step="${kind}" data-dir="-1" aria-label="Decrease">−</button>
+    </div>`;
+}
+
+function renderNightLightPage(s) {
+  const on = s.nightLight;
+  const dim = on ? "" : " is-disabled";
+  const scheduleLabel =
+    s.nlSchedule === "manual" ? "Manual Schedule" : "Sunset to Sunrise";
+  // Layout matches Ubuntu GNOME Settings: Night Light → Schedule → Times → Color Temperature.
+  return (
+    pageIntro(
+      "Night light makes the screen color warmer. This can help to prevent eye strain and sleeplessness."
+    ) +
+    groupStart(null) +
+    rowToggle("Night Light", null, "nightLight", on) +
+    // AdwComboRow-style: plain label + value + chevron (popover, not native <select>)
+    `<div class="settings-row settings-nl-combo-row${dim}">
+      <div class="settings-row-main">
+        <div class="settings-row-text"><div class="settings-row-title">Schedule</div></div>
+      </div>
+      <div class="settings-row-suffix settings-nl-combo-wrap">
+        <button type="button" class="settings-nl-combo" data-nl-combo ${on ? "" : "disabled"} aria-haspopup="listbox" aria-expanded="false">
+          <span class="settings-nl-combo-label" data-nl-combo-label>${scheduleLabel}</span>
+          <img class="settings-chevron settings-nl-combo-chevron" src="assets/settings/go-next-symbolic.svg" alt="" draggable="false" />
+        </button>
+        <div class="settings-nl-popover" data-nl-popover hidden role="listbox" aria-label="Schedule">
+          <button type="button" class="settings-nl-popover-item${
+            s.nlSchedule !== "manual" ? " selected" : ""
+          }" role="option" data-nl-schedule-opt="sunset" aria-selected="${
+            s.nlSchedule !== "manual" ? "true" : "false"
+          }">Sunset to Sunrise</button>
+          <button type="button" class="settings-nl-popover-item${
+            s.nlSchedule === "manual" ? " selected" : ""
+          }" role="option" data-nl-schedule-opt="manual" aria-selected="${
+            s.nlSchedule === "manual" ? "true" : "false"
+          }">Manual Schedule</button>
+        </div>
+      </div>
+    </div>` +
+    // Times with vertical +/value/− spinbuttons (From 20:00 To 06:00 in screenshot)
+    `<div class="settings-row settings-nl-times-row${dim}${
+      s.nlSchedule === "manual" ? "" : " is-hidden"
+    }">
+      <div class="settings-row-main">
+        <div class="settings-row-text"><div class="settings-row-title">Times</div></div>
+      </div>
+      <div class="settings-row-suffix settings-nl-times">
+        <span class="settings-nl-fromto">From</span>
+        ${nlSpin("fromH", s.nlFromH)}
+        <span class="settings-nl-colon">:</span>
+        ${nlSpin("fromM", s.nlFromM)}
+        <span class="settings-nl-fromto">To</span>
+        ${nlSpin("toH", s.nlToH)}
+        <span class="settings-nl-colon">:</span>
+        ${nlSpin("toM", s.nlToM)}
+      </div>
+    </div>` +
+    `<div class="settings-row-block settings-nl-temp-block${dim}">
+      <div class="settings-row-title">Color Temperature</div>
+      <div class="settings-nl-temp-wrap">
+        <input type="range" class="settings-range settings-nl-temp" data-slider="nightTemp" min="0" max="100" value="${s.nightTemp}" aria-label="Color Temperature" ${
+          on ? "" : "disabled"
+        } />
+        <div class="settings-nl-temp-ticks" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+    </div>` +
+    groupEnd()
+  );
+}
+
 function renderAboutPage(s) {
   return `
     <div class="settings-about-hero">
@@ -3714,6 +3812,11 @@ function setSettingValue(key, value) {
   }
   if (key === "nightLight" && typeof setNightLight === "function") {
     setNightLight(value);
+    renderSettingsContent();
+    return;
+  }
+  if (key === "nightTemp") {
+    applyNightLightTemperature(value);
   }
   if (key === "reducedMotion") applyReducedMotion(value);
   if (key === "dnd") {
@@ -3755,7 +3858,8 @@ function setSettingValue(key, value) {
     key === "screenTimeLimit" ||
     key === "movementReminders" ||
     key === "eyesightReminders" ||
-    key === "dynamicWorkspaces"
+    key === "dynamicWorkspaces" ||
+    key === "nlSchedule"
   ) {
     renderSettingsContent();
   }
@@ -3887,13 +3991,14 @@ function bindSettingsContentHandlers() {
     input.style.setProperty("--range-fill", `${pct}%`);
   };
 
-  settingsContent.querySelectorAll("[data-slider]").forEach((input) => {
+  settingsContent.querySelectorAll("input.settings-range").forEach((input) => {
     paintRange(input);
     input.addEventListener("input", (e) => {
       e.stopPropagation();
-      const key = input.dataset.slider;
-      const val = Number(input.value);
       paintRange(input);
+      const key = input.dataset.slider;
+      if (!key) return;
+      const val = Number(input.value);
       if (key === "textSize") {
         settingsState.textSize = val;
         const sample = settingsContent.querySelector(".settings-text-preview-sample");
@@ -3903,6 +4008,59 @@ function bindSettingsContentHandlers() {
       setSettingValue(key, val);
       const label = settingsContent.querySelector(`[data-slider-label="${key}"]`);
       if (label) label.textContent = `${val}%`;
+    });
+  });
+
+  // Night Light schedule combo (popover, not native <select>)
+  const nlCombo = settingsContent.querySelector("[data-nl-combo]");
+  const nlPopover = settingsContent.querySelector("[data-nl-popover]");
+  if (nlCombo && nlPopover) {
+    const closePopover = () => {
+      nlPopover.hidden = true;
+      nlCombo.setAttribute("aria-expanded", "false");
+    };
+    nlCombo.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (nlCombo.disabled) return;
+      const open = nlPopover.hidden;
+      nlPopover.hidden = !open;
+      nlCombo.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+    nlPopover.querySelectorAll("[data-nl-schedule-opt]").forEach((item) => {
+      item.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setSettingValue("nlSchedule", item.dataset.nlScheduleOpt);
+        renderSettingsContent();
+      });
+    });
+    // Close when clicking elsewhere in settings content
+    settingsContent.addEventListener(
+      "click",
+      (e) => {
+        if (!e.target.closest(".settings-nl-combo-wrap")) closePopover();
+      },
+      { once: true }
+    );
+  }
+
+  settingsContent.querySelectorAll("[data-nl-step]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!settingsState.nightLight) return;
+      const kind = btn.dataset.nlStep;
+      const dir = Number(btn.dataset.dir) || 1;
+      const map = {
+        fromH: ["nlFromH", 24],
+        fromM: ["nlFromM", 60],
+        toH: ["nlToH", 24],
+        toM: ["nlToM", 60],
+      };
+      const [key, mod] = map[kind] || [];
+      if (!key) return;
+      let next = (Number(settingsState[key]) + dir) % mod;
+      if (next < 0) next += mod;
+      settingsState[key] = next;
+      renderSettingsContent();
     });
   });
 

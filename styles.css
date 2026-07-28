@@ -312,22 +312,25 @@ img {
   pointer-events: auto;
 }
 
-/* Night Light — warm amber cast over the whole desktop (GNOME-like) */
+/* Night Light — warm cast; intensity/hue driven by --nl-* (Color Temperature) */
+:root {
+  --nl-r: 255;
+  --nl-g: 150;
+  --nl-b: 70;
+  --nl-multiply-alpha: 0.28;
+  --nl-soft-alpha: 0.35;
+}
+
 .night-light-overlay {
   position: absolute;
   inset: 0;
   z-index: 10000;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 450ms ease;
-  /* Layered warm filters approximate reduced color temperature */
-  background:
-    linear-gradient(
-      0deg,
-      rgba(255, 140, 50, 0.28),
-      rgba(255, 160, 70, 0.18) 40%,
-      rgba(255, 180, 90, 0.14)
-    );
+  transition: opacity 450ms ease, background 180ms ease;
+  background: rgb(
+    var(--nl-r) var(--nl-g) var(--nl-b) / var(--nl-multiply-alpha)
+  );
   mix-blend-mode: multiply;
 }
 
@@ -340,10 +343,10 @@ html[data-night-light="on"] .night-light-overlay {
   content: "";
   position: absolute;
   inset: 0;
-  background: rgba(255, 150, 60, 0.35);
+  background: rgb(var(--nl-r) var(--nl-g) var(--nl-b) / var(--nl-soft-alpha));
   mix-blend-mode: soft-light;
   opacity: 0;
-  transition: opacity 450ms ease;
+  transition: opacity 450ms ease, background 180ms ease;
 }
 
 html[data-night-light="on"] .night-light-overlay::after {
@@ -3317,12 +3320,24 @@ html[data-theme="light"] .settings-radio.on {
   margin-top: 1px;
 }
 
+/* Range: tall hit target, thin painted track (fixes unusable thin sliders) */
 .settings-range {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 4px;
-  border-radius: 999px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.settings-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 99px;
   background: linear-gradient(
     to right,
     var(--accent) 0%,
@@ -3330,28 +3345,298 @@ html[data-theme="light"] .settings-radio.on {
     color-mix(in srgb, var(--win-fg) 18%, transparent) var(--range-fill, 50%),
     color-mix(in srgb, var(--win-fg) 18%, transparent) 100%
   );
-  outline: none;
-  accent-color: var(--accent);
 }
 
 .settings-range::-webkit-slider-thumb {
   -webkit-appearance: none;
+  appearance: none;
   width: 18px;
   height: 18px;
+  margin-top: -6px; /* (18 - 6) / 2 */
   border-radius: 50%;
-  background: var(--accent);
+  background: #fff;
   border: none;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.12),
+    0 1px 4px rgba(0, 0, 0, 0.28);
   cursor: pointer;
+}
+
+.settings-range::-moz-range-track {
+  height: 6px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--win-fg) 18%, transparent);
+  border: none;
+}
+
+.settings-range::-moz-range-progress {
+  height: 6px;
+  border-radius: 99px;
+  background: var(--accent);
 }
 
 .settings-range::-moz-range-thumb {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--accent);
+  background: #fff;
+  border: none;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.12),
+    0 1px 4px rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+}
+
+/* Night Light page (matches GNOME / Ubuntu Settings) */
+.settings-row.is-hidden {
+  display: none !important;
+}
+
+/* AdwComboRow-like schedule control (no native <select>) */
+.settings-nl-combo-wrap {
+  position: relative;
+  gap: 0;
+}
+
+.settings-nl-combo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px 4px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--win-fg-dim);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  max-width: 220px;
+}
+
+.settings-nl-combo:hover:not(:disabled) {
+  background: var(--win-hover);
+  color: var(--win-fg);
+}
+
+.settings-nl-combo:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.settings-nl-combo-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-nl-combo-chevron {
+  width: 12px;
+  height: 12px;
+  transform: rotate(90deg);
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+
+.settings-nl-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 200px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--surface-raised, #363636);
+  border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.12));
+  box-shadow: var(--shadow, 0 8px 28px rgba(0, 0, 0, 0.45));
+  z-index: 30;
+}
+
+.settings-nl-popover[hidden] {
+  display: none !important;
+}
+
+.settings-nl-popover-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--surface-fg, var(--win-fg));
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.settings-nl-popover-item:hover {
+  background: var(--surface-muted, rgba(255, 255, 255, 0.08));
+}
+
+.settings-nl-popover-item.selected {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  font-weight: 600;
+}
+
+.settings-nl-times-row {
+  min-height: 72px;
+}
+
+.settings-nl-times {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.settings-nl-fromto {
+  font-size: 12px;
+  color: var(--win-fg-dim);
+  margin: 0 2px;
+}
+
+.settings-nl-colon {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--win-fg-dim);
+  padding: 0 1px;
+  align-self: center;
+  margin-top: 2px;
+}
+
+/* Vertical spinbuttons (+ / value / −) like GtkSpinButton orientation=vertical */
+.settings-nl-spin {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 40px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--win-fg) 10%, transparent);
+}
+
+.settings-nl-spin-btn {
+  display: grid;
+  place-items: center;
+  height: 22px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--win-fg-dim);
+  background: transparent;
   border: none;
   cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+
+.settings-nl-spin-btn:hover {
+  background: color-mix(in srgb, var(--win-fg) 8%, transparent);
+  color: var(--win-fg);
+}
+
+.settings-nl-spin-val {
+  display: grid;
+  place-items: center;
+  height: 26px;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--win-fg);
+  border-top: 1px solid color-mix(in srgb, var(--win-fg) 8%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--win-fg) 8%, transparent);
+}
+
+/* Color temperature scale */
+.settings-nl-temp-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 18px;
+  border-bottom: none;
+}
+
+.settings-nl-temp-wrap {
+  position: relative;
+  width: 100%;
+  padding: 6px 2px 10px;
+}
+
+.settings-range.settings-nl-temp {
+  position: relative;
+  z-index: 1;
+}
+
+.settings-range.settings-nl-temp::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 99px;
+  /* Cool (4700K) → Warm (1700K) */
+  background: linear-gradient(
+    to right,
+    rgb(255, 225, 196) 0%,
+    rgb(255, 196, 140) 35%,
+    rgb(255, 160, 70) 70%,
+    rgb(255, 122, 0) 100%
+  );
+}
+
+.settings-range.settings-nl-temp::-webkit-slider-thumb {
+  margin-top: -5px;
+  width: 18px;
+  height: 18px;
+  background: #e8e8e8;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.2),
+    0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.settings-range.settings-nl-temp:disabled::-webkit-slider-thumb {
+  background: #b0b0b0;
+}
+
+.settings-range.settings-nl-temp::-moz-range-track {
+  height: 8px;
+  border-radius: 99px;
+  background: linear-gradient(
+    to right,
+    rgb(255, 225, 196) 0%,
+    rgb(255, 196, 140) 35%,
+    rgb(255, 160, 70) 70%,
+    rgb(255, 122, 0) 100%
+  );
+}
+
+.settings-range.settings-nl-temp::-moz-range-progress {
+  background: transparent;
+}
+
+.settings-range.settings-nl-temp::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  background: #e8e8e8;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.2),
+    0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+/* Tick marks under the temperature scale (GNOME marks at 1700/2700/3700/4700) */
+.settings-nl-temp-ticks {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 4px;
+  margin-top: -2px;
+  pointer-events: none;
+}
+
+.settings-nl-temp-ticks span {
+  width: 1px;
+  height: 6px;
+  background: color-mix(in srgb, var(--win-fg) 28%, transparent);
+  border-radius: 1px;
+}
+
+.settings-nl-temp-block.is-disabled,
+.settings-row.is-disabled .settings-nl-times {
+  opacity: 0.42;
+  pointer-events: none;
 }
 
 .settings-accent-row {
