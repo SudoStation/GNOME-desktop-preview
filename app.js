@@ -97,6 +97,8 @@ let overviewCloseTimer = 0;
 let switchAnimTimer = 0;
 /** Workspace index that currently hosts Nautilus (if open). */
 let nautilusWorkspace = 0;
+/** Workspace index that currently hosts Settings (if open). */
+let settingsWorkspace = 0;
 
 const workspacePanes = () =>
   workspaceTrack
@@ -260,13 +262,26 @@ function updateWorkspaceChrome(progress = workspaceProgress) {
   });
 }
 
-function placeNautilusOnWorkspace() {
-  const nau = document.getElementById("nautilus-window");
-  if (!nau) return;
-  const host = document.getElementById(`workspace-windows-${nautilusWorkspace}`);
-  if (host && nau.parentElement !== host) {
-    host.appendChild(nau);
+function placeWindowOnWorkspace(el, workspaceIndex) {
+  if (!el) return;
+  const host = document.getElementById(`workspace-windows-${workspaceIndex}`);
+  if (host && el.parentElement !== host) {
+    host.appendChild(el);
   }
+}
+
+function placeNautilusOnWorkspace() {
+  placeWindowOnWorkspace(
+    document.getElementById("nautilus-window"),
+    nautilusWorkspace
+  );
+}
+
+function placeSettingsOnWorkspace() {
+  placeWindowOnWorkspace(
+    document.getElementById("settings-window"),
+    settingsWorkspace
+  );
 }
 
 /**
@@ -369,6 +384,7 @@ function handleWorkspaceScroll(deltaY, deltaX = 0) {
 
 function initWorkspaces() {
   placeNautilusOnWorkspace();
+  placeSettingsOnWorkspace();
   workspaceProgress = activeWorkspace;
   updateWorkspaceChrome(activeWorkspace);
   applyWorkspaceGeometry({ mode: "desktop", progress: activeWorkspace, animate: false });
@@ -602,7 +618,6 @@ function renderApps(filter = "") {
       <img src="${app.icon}" alt="" draggable="false" />
       <span class="app-tile-label">${app.name}</span>
     `;
-    // Apps intentionally do nothing beyond a brief press feedback
     btn.addEventListener("click", () => {
       btn.classList.add("pressed");
       setTimeout(() => btn.classList.remove("pressed"), 150);
@@ -837,10 +852,17 @@ document.querySelectorAll(".qs-toggle").forEach((btn) => {
 
     if (btn.dataset.toggle === "dark") {
       setDarkStyle(on);
+      if (typeof settingsState !== "undefined") settingsState.darkStyle = on;
     } else if (btn.dataset.toggle === "night") {
       setNightLight(on);
+      if (typeof settingsState !== "undefined") settingsState.nightLight = on;
     } else if (btn.dataset.toggle === "power-mode") {
       updatePowerMode(on);
+      if (typeof settingsState !== "undefined") {
+        settingsState.powerMode = on ? "performance" : "balanced";
+      }
+    } else if (btn.dataset.toggle === "dnd") {
+      if (typeof settingsState !== "undefined") settingsState.dnd = on;
     }
   });
 });
@@ -946,6 +968,10 @@ document.querySelectorAll(".dock-item[data-app]").forEach((item) => {
       toggleNautilus();
       return;
     }
+    if (app === "settings") {
+      toggleSettings();
+      return;
+    }
     // Other dock apps: visual feedback only
   });
 });
@@ -974,6 +1000,19 @@ document.addEventListener("keydown", (e) => {
       closeAll();
       return;
     }
+    if (settingsSearchOpen) {
+      setSettingsSearchOpen(false);
+      return;
+    }
+    if (settingsSubpage) {
+      settingsSubpage = null;
+      renderSettingsContent();
+      return;
+    }
+    if (settingsWindow && !settingsWindow.hidden) {
+      closeSettings();
+      return;
+    }
     if (nauSearchOpen) {
       setNautilusSearchOpen(false);
       return;
@@ -996,11 +1035,24 @@ document.addEventListener("keydown", (e) => {
     return;
   }
 
+  // Ctrl+F in Settings → search
+  if (
+    (e.ctrlKey || e.metaKey) &&
+    e.key.toLowerCase() === "f" &&
+    settingsWindow &&
+    !settingsWindow.hidden
+  ) {
+    e.preventDefault();
+    setSettingsSearchOpen(true);
+    return;
+  }
+
   // Type-to-search when overview closed: open it
   if (
     !overviewOpen &&
     appMenu.hidden &&
     nautilusWindow.hidden &&
+    (!settingsWindow || settingsWindow.hidden) &&
     e.key.length === 1 &&
     !e.ctrlKey &&
     !e.metaKey &&
@@ -1700,6 +1752,2255 @@ nautilusWindow.addEventListener("click", (e) => {
 
 // Don't open overview type-to-search while typing in Nautilus
 nauSearchInput.addEventListener("click", (e) => e.stopPropagation());
+
+/* ============================================================
+   GNOME Settings 50 (gnome-control-center)
+   Panel order from upstream shell/cc-panel-list.c panel_order[]
+   GNOME 50 highlights: first day of week, reduced motion,
+   sound I/O volume levels, multitasking reopen windows,
+   power charge modes, display scaling/VRR.
+   ============================================================ */
+
+const SETTINGS_ICON = "assets/settings/";
+
+/** Official sidebar order (GNOME 50). Separators match header_func. */
+const SETTINGS_PANELS = [
+  {
+    id: "wifi",
+    name: "Wi-Fi",
+    icon: SETTINGS_ICON + "network-wireless-symbolic.svg",
+    keywords: ["wifi", "wireless", "network", "internet", "ssid"],
+    description: "Wireless networks",
+  },
+  {
+    id: "network",
+    name: "Network",
+    icon: SETTINGS_ICON + "org.gnome.Settings-network-symbolic.svg",
+    keywords: ["network", "wired", "ethernet", "vpn", "proxy"],
+    description: "Wired, VPN and proxy",
+  },
+  {
+    id: "bluetooth",
+    name: "Bluetooth",
+    icon: SETTINGS_ICON + "org.gnome.Settings-bluetooth-symbolic.svg",
+    keywords: ["bluetooth", "devices", "headphones", "mouse"],
+    description: "Bluetooth devices",
+    separatorAfter: true,
+  },
+  {
+    id: "display",
+    name: "Displays",
+    icon: SETTINGS_ICON + "org.gnome.Settings-display-symbolic.svg",
+    keywords: ["display", "monitor", "resolution", "scale", "night light", "vrr", "refresh"],
+    description: "Resolution, scale, night light",
+  },
+  {
+    id: "sound",
+    name: "Sound",
+    icon: SETTINGS_ICON + "org.gnome.Settings-sound-symbolic.svg",
+    keywords: ["sound", "volume", "audio", "microphone", "output", "input"],
+    description: "Volume and devices",
+  },
+  {
+    id: "power",
+    name: "Power",
+    icon: SETTINGS_ICON + "org.gnome.Settings-power-symbolic.svg",
+    keywords: ["power", "battery", "suspend", "brightness", "power mode"],
+    description: "Battery and power saving",
+  },
+  {
+    id: "multitasking",
+    name: "Multitasking",
+    icon: SETTINGS_ICON + "org.gnome.Settings-multitasking-symbolic.svg",
+    keywords: ["multitasking", "workspaces", "hot corner", "overview"],
+    description: "Workspaces and hot corner",
+  },
+  {
+    id: "background",
+    name: "Appearance",
+    icon: SETTINGS_ICON + "org.gnome.Settings-appearance-symbolic.svg",
+    keywords: ["appearance", "background", "wallpaper", "dark", "style", "accent"],
+    description: "Style, accent and wallpaper",
+    separatorAfter: true,
+  },
+  {
+    id: "applications",
+    name: "Apps",
+    icon: SETTINGS_ICON + "org.gnome.Settings-applications-symbolic.svg",
+    keywords: ["apps", "applications", "defaults", "permissions"],
+    description: "Default apps and permissions",
+  },
+  {
+    id: "notifications",
+    name: "Notifications",
+    icon: SETTINGS_ICON + "org.gnome.Settings-notifications-symbolic.svg",
+    keywords: ["notifications", "do not disturb", "banner"],
+    description: "Notification settings",
+  },
+  {
+    id: "search",
+    name: "Search",
+    icon: SETTINGS_ICON + "org.gnome.Settings-search-symbolic.svg",
+    keywords: ["search", "overview", "index"],
+    description: "Search results",
+  },
+  {
+    id: "online-accounts",
+    name: "Online Accounts",
+    icon: SETTINGS_ICON + "org.gnome.Settings-online-accounts-symbolic.svg",
+    keywords: ["accounts", "google", "email", "calendar", "online"],
+    description: "Mail, calendar and contacts",
+  },
+  {
+    id: "sharing",
+    name: "Sharing",
+    icon: SETTINGS_ICON + "org.gnome.Settings-sharing-symbolic.svg",
+    keywords: ["sharing", "media", "file sharing", "remote"],
+    description: "File and media sharing",
+  },
+  {
+    id: "wellbeing",
+    name: "Wellbeing",
+    icon: SETTINGS_ICON + "org.gnome.Settings-wellbeing-symbolic.svg",
+    keywords: ["wellbeing", "screen time", "breaks", "parental"],
+    description: "Screen time and breaks",
+    separatorAfter: true,
+  },
+  {
+    id: "mouse",
+    name: "Mouse & Touchpad",
+    icon: SETTINGS_ICON + "org.gnome.Settings-mouse-symbolic.svg",
+    keywords: ["mouse", "touchpad", "pointer", "scroll", "tap"],
+    description: "Pointer and touchpad",
+  },
+  {
+    id: "keyboard",
+    name: "Keyboard",
+    icon: SETTINGS_ICON + "org.gnome.Settings-keyboard-symbolic.svg",
+    keywords: ["keyboard", "shortcuts", "input", "layout"],
+    description: "Input sources and shortcuts",
+  },
+  {
+    id: "color",
+    name: "Color Management",
+    icon: SETTINGS_ICON + "org.gnome.Settings-color-symbolic.svg",
+    keywords: ["color", "calibration", "profile", "icc"],
+    description: "Display color profiles",
+  },
+  {
+    id: "printers",
+    name: "Printers",
+    icon: SETTINGS_ICON + "org.gnome.Settings-printers-symbolic.svg",
+    keywords: ["printers", "print", "cups"],
+    description: "Printers and jobs",
+  },
+  {
+    id: "wacom",
+    name: "Graphics Tablets",
+    icon: SETTINGS_ICON + "org.gnome.Settings-wacom-symbolic.svg",
+    keywords: ["wacom", "tablet", "stylus", "graphics"],
+    description: "Drawing tablets",
+    separatorAfter: true,
+  },
+  {
+    id: "universal-access",
+    name: "Accessibility",
+    icon: SETTINGS_ICON + "org.gnome.Settings-accessibility-symbolic.svg",
+    keywords: ["accessibility", "a11y", "screen reader", "contrast", "zoom", "reduced motion"],
+    description: "Vision, hearing and interaction",
+  },
+  {
+    id: "privacy",
+    name: "Privacy & Security",
+    icon: SETTINGS_ICON + "org.gnome.Settings-privacy-symbolic.svg",
+    keywords: ["privacy", "security", "location", "camera", "lock", "trash"],
+    description: "Permissions and device security",
+  },
+  {
+    id: "system",
+    name: "System",
+    icon: SETTINGS_ICON + "org.gnome.Settings-system-symbolic.svg",
+    keywords: ["system", "about", "users", "date", "time", "language", "region", "remote"],
+    description: "Region, users and about",
+  },
+];
+
+const SETTINGS_ACCENTS = [
+  { id: "blue", color: "#3584e4" },
+  { id: "teal", color: "#2190a4" },
+  { id: "green", color: "#3a944a" },
+  { id: "yellow", color: "#c88800" },
+  { id: "orange", color: "#ed5b00" },
+  { id: "red", color: "#e62d42" },
+  { id: "pink", color: "#d56199" },
+  { id: "purple", color: "#9141ac" },
+  { id: "slate", color: "#6f8396" },
+  { id: "brown", color: "#b39169" },
+];
+
+const settingsWindow = document.getElementById("settings-window");
+const settingsPanelList = document.getElementById("settings-panel-list");
+const settingsContent = document.getElementById("settings-content");
+const settingsPanelTitle = document.getElementById("settings-panel-title");
+const settingsSearchBtn = document.getElementById("settings-search-btn");
+const settingsSearchBar = document.getElementById("settings-search-bar");
+const settingsSearchInput = document.getElementById("settings-search-input");
+const settingsBackBtn = document.getElementById("settings-back-btn");
+const settingsCloseBtn = document.getElementById("settings-close");
+const settingsMenuBtn = document.getElementById("settings-menu-btn");
+const settingsMenu = document.getElementById("settings-menu");
+const qsSettingsBtn = document.getElementById("qs-settings-btn");
+
+let settingsPanelId = "network";
+/** @type {null | { id: string, title: string }} */
+let settingsSubpage = null;
+let settingsSearchOpen = false;
+let settingsSearchQuery = "";
+
+/** Interactive settings state (mirrors desktop mockup + GNOME 50 options). */
+const settingsState = {
+  darkStyle: document.documentElement.getAttribute("data-theme") !== "light",
+  accent: "blue",
+  wallpaper: "adwaita",
+  wifiEnabled: false,
+  bluetoothEnabled: true,
+  nightLight: false,
+  dnd: false,
+  lockScreenNotifications: true,
+  volumeOutput: 58,
+  volumeInput: 72,
+  overamplification: false,
+  powerMode: "performance", // power-saver | balanced | performance
+  batteryCharge: "maximize", // maximize | preserve
+  showBatteryPercent: false,
+  dimScreen: true,
+  autoSuspend: false,
+  autoScreenBlank: false,
+  screenBlankDelay: "5 minutes",
+  suspendDelay: "1 hour",
+  powerButtonBehavior: "Power Off",
+  hotCorner: false,
+  edgeTiling: false,
+  reopenWindows: false,
+  dynamicWorkspaces: true,
+  workspaceCount: 4,
+  multiMonitorWorkspaces: "primary", // primary | all
+  appSwitchWorkspaces: "all",
+  appSwitchMonitors: "all",
+  primaryButton: "left",
+  tapToClick: true,
+  naturalScroll: false,
+  mouseAcceleration: false,
+  pointerSpeed: 88,
+  touchpadSpeed: 55,
+  disableTouchpadTyping: true,
+  volumeBalance: 50,
+  startupSound: false,
+  appSearch: true,
+  fileSharing: false,
+  mediaSharing: false,
+  deviceName: "linux-desktop",
+  screenTimeLimit: false,
+  grayscale: true,
+  eyesightReminders: false,
+  movementReminders: false,
+  breakSounds: true,
+  colorDeviceEnabled: true,
+  alwaysShowA11yMenu: false,
+  highContrast: false,
+  reducedMotion: false,
+  onOffShapes: false,
+  textSize: 1, // 0..2
+  cursorSize: 1,
+  autoDatetime: true,
+  autoTimezone: true,
+  timeFormat24: true,
+  firstDayOfWeek: "monday", // GNOME 50
+  weekDayInClock: true,
+  dateInClock: true,
+  secondsInClock: false,
+  weekNumbers: false,
+  screenLock: true,
+  location: false,
+  legacyAppScaling: false,
+  displayScale: "100%",
+  refreshRate: "60 Hz",
+  vrr: true,
+};
+
+function openSettings(panelId) {
+  closeAppMenu();
+  closeQuickSettings();
+  closeCalendar();
+  if (settingsMenu) settingsMenu.hidden = true;
+
+  settingsWorkspace = activeWorkspace;
+  settingsWindow.dataset.workspace = String(settingsWorkspace);
+  placeSettingsOnWorkspace();
+  settingsWindow.hidden = false;
+  settingsWindow.classList.remove("is-opening");
+  void settingsWindow.offsetWidth;
+  settingsWindow.classList.add("is-opening");
+  const clearOpening = () => settingsWindow.classList.remove("is-opening");
+  settingsWindow.addEventListener("animationend", clearOpening, { once: true });
+  window.setTimeout(clearOpening, 200);
+
+  settingsSubpage = null;
+  setSettingsSearchOpen(false);
+  if (panelId) settingsPanelId = panelId;
+  renderSettingsSidebar();
+  renderSettingsContent();
+}
+
+function closeSettings() {
+  settingsWindow.hidden = true;
+  settingsWindow.classList.remove("is-opening");
+  settingsSubpage = null;
+  setSettingsSearchOpen(false);
+  if (settingsMenu) settingsMenu.hidden = true;
+}
+
+function toggleSettings(panelId) {
+  if (settingsWindow.hidden) openSettings(panelId);
+  else if (panelId && panelId !== settingsPanelId) {
+    settingsPanelId = panelId;
+    settingsSubpage = null;
+    renderSettingsSidebar();
+    renderSettingsContent();
+  } else closeSettings();
+}
+
+function setSettingsSearchOpen(open) {
+  settingsSearchOpen = open;
+  if (settingsSearchBar) settingsSearchBar.hidden = !open;
+  settingsSearchBtn?.classList.toggle("active", open);
+  settingsSearchBtn?.setAttribute("aria-pressed", open ? "true" : "false");
+  if (open) {
+    settingsSearchInput?.focus();
+  } else {
+    settingsSearchQuery = "";
+    if (settingsSearchInput) settingsSearchInput.value = "";
+    renderSettingsSidebar();
+  }
+}
+
+function panelMatchesSearch(panel, query) {
+  if (!query) return true;
+  const q = query.toLowerCase().trim();
+  if (!q) return true;
+  const hay = [panel.name, panel.description, ...(panel.keywords || [])]
+    .join(" ")
+    .toLowerCase();
+  return q.split(/\s+/).every((word) => hay.includes(word));
+}
+
+function renderSettingsSidebar() {
+  if (!settingsPanelList) return;
+  settingsPanelList.innerHTML = "";
+  const q = settingsSearchQuery.trim();
+  const panels = SETTINGS_PANELS.filter((p) => panelMatchesSearch(p, q));
+
+  if (!panels.length) {
+    const empty = document.createElement("div");
+    empty.className = "settings-panel-empty";
+    empty.innerHTML = `
+      <div class="settings-panel-empty-title">No Results Found</div>
+      <div>Try a different search</div>`;
+    settingsPanelList.appendChild(empty);
+    return;
+  }
+
+  panels.forEach((panel, index) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className =
+      "settings-panel-row" + (panel.id === settingsPanelId && !q ? " active" : "");
+    if (q && panel.id === settingsPanelId) row.classList.add("active");
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", panel.id === settingsPanelId ? "true" : "false");
+    row.dataset.panel = panel.id;
+    row.innerHTML = `
+      <img class="settings-panel-icon" src="${panel.icon}" alt="" draggable="false" />
+      <span class="settings-panel-meta">
+        <span class="settings-panel-name">${panel.name}</span>
+        ${
+          q
+            ? `<span class="settings-panel-desc">${panel.description || ""}</span>`
+            : ""
+        }
+      </span>`;
+    row.addEventListener("click", (e) => {
+      e.stopPropagation();
+      settingsPanelId = panel.id;
+      settingsSubpage = null;
+      if (q) {
+        // Leave search mode after choosing a result (GNOME-like)
+        setSettingsSearchOpen(false);
+      } else {
+        renderSettingsSidebar();
+      }
+      renderSettingsContent();
+    });
+    settingsPanelList.appendChild(row);
+
+    // Separators only in main (non-search) list, after marked panels
+    if (!q && panel.separatorAfter && index < panels.length - 1) {
+      const sep = document.createElement("div");
+      sep.className = "settings-panel-sep";
+      sep.setAttribute("role", "separator");
+      settingsPanelList.appendChild(sep);
+    }
+  });
+}
+
+function switchHtml(id, on) {
+  return `<button type="button" class="settings-switch${on ? " on" : ""}" role="switch" aria-checked="${on ? "true" : "false"}" data-setting="${id}" aria-label="${id}"></button>`;
+}
+
+function radioHtml(on) {
+  return `<span class="settings-radio${on ? " on" : ""}" aria-hidden="true"></span>`;
+}
+
+function chevronHtml() {
+  return `<img class="settings-chevron" src="assets/settings/go-next-symbolic.svg" alt="" draggable="false" />`;
+}
+
+function addIconHtml() {
+  return `<img class="sym" src="assets/settings/list-add-symbolic.svg" alt="" draggable="false" />`;
+}
+
+function groupStart(title, { description, suffix } = {}) {
+  let h = `<div class="settings-group">`;
+  if (title || suffix) {
+    h += `<div class="settings-group-header">`;
+    if (title) h += `<div class="settings-group-title">${title}</div>`;
+    else h += `<div></div>`;
+    if (suffix) h += `<div class="settings-group-suffix">${suffix}</div>`;
+    h += `</div>`;
+  }
+  if (description) h += `<div class="settings-group-desc">${description}</div>`;
+  h += `<div class="settings-card">`;
+  return h;
+}
+
+function groupEnd() {
+  return `</div></div>`;
+}
+
+function rowToggle(title, sub, settingId, on, { disabled = false } = {}) {
+  return `
+    <div class="settings-row${disabled ? " is-disabled" : ""}">
+      <div class="settings-row-main">
+        <div class="settings-row-text">
+          <div class="settings-row-title">${title}</div>
+          ${sub ? `<div class="settings-row-sub">${sub}</div>` : ""}
+        </div>
+      </div>
+      <div class="settings-row-suffix">${switchHtml(settingId, on)}</div>
+    </div>`;
+}
+
+function rowNav(title, sub, target, { icon, value, external = false } = {}) {
+  return `
+    <button type="button" class="settings-row activatable" data-nav="${target}">
+      <div class="settings-row-main">
+        ${icon ? `<img class="settings-row-icon" src="${icon}" alt="" draggable="false" />` : ""}
+        <div class="settings-row-text">
+          <div class="settings-row-title">${title}</div>
+          ${sub ? `<div class="settings-row-sub">${sub}</div>` : ""}
+        </div>
+      </div>
+      <div class="settings-row-suffix">
+        ${value != null && value !== "" ? `<span class="settings-value">${value}</span>` : ""}
+        ${
+          external
+            ? `<img class="settings-ext-link" src="assets/settings/go-next-symbolic.svg" alt="" style="transform:rotate(-45deg)" draggable="false" />`
+            : chevronHtml()
+        }
+      </div>
+    </button>`;
+}
+
+/** GNOME AdwActionRow radio: indicator on the left */
+function rowRadio(title, sub, settingId, value, selected) {
+  return `
+    <button type="button" class="settings-row activatable radio-left" data-radio="${settingId}" data-value="${value}">
+      ${radioHtml(selected)}
+      <div class="settings-row-main">
+        <div class="settings-row-text">
+          <div class="settings-row-title">${title}</div>
+          ${sub ? `<div class="settings-row-sub">${sub}</div>` : ""}
+        </div>
+      </div>
+    </button>`;
+}
+
+function rowStatic(title, value, { disabled = false } = {}) {
+  return `
+    <div class="settings-row${disabled ? " is-disabled" : ""}">
+      <div class="settings-row-main">
+        <div class="settings-row-text">
+          <div class="settings-row-title">${title}</div>
+        </div>
+      </div>
+      <div class="settings-row-suffix"><span class="settings-value">${value}</span></div>
+    </div>`;
+}
+
+/** Combo/dropdown-looking value row (non-interactive preview) */
+function rowCombo(title, value, { icon, sub } = {}) {
+  return `
+    <div class="settings-row">
+      <div class="settings-row-main">
+        ${icon ? `<img class="settings-row-icon" src="${icon}" alt="" draggable="false" />` : ""}
+        <div class="settings-row-text">
+          <div class="settings-row-title">${title}</div>
+          ${sub ? `<div class="settings-row-sub">${sub}</div>` : ""}
+        </div>
+      </div>
+      <div class="settings-row-suffix"><span class="settings-value">${value}</span><span class="settings-value" style="opacity:.55;font-size:11px">▾</span></div>
+    </div>`;
+}
+
+function rowSliderInline(title, settingId, value, { icon, min = 0, max = 100, ends } = {}) {
+  return `
+    <div class="settings-row slider-inline">
+      <div class="settings-row-title">${title}</div>
+      <div class="settings-slider-stack">
+        <div class="settings-inline-slider">
+          ${icon ? `<img class="settings-row-icon" src="${icon}" alt="" draggable="false" />` : ""}
+          <input type="range" class="settings-range" data-slider="${settingId}" min="${min}" max="${max}" value="${value}" aria-label="${title}" />
+        </div>
+        ${
+          ends
+            ? `<div class="settings-ends"><span>${ends[0]}</span><span>${ends[1]}</span></div>`
+            : ""
+        }
+      </div>
+    </div>`;
+}
+
+function rowSlider(title, settingId, value, { min = 0, max = 100 } = {}) {
+  return rowSliderInline(title, settingId, value, { min, max });
+}
+
+function pageIntro(html) {
+  return `<div class="settings-page-intro">${html}</div>`;
+}
+
+function currentPanel() {
+  return SETTINGS_PANELS.find((p) => p.id === settingsPanelId);
+}
+
+function renderSettingsHeaderActions() {
+  const el = document.getElementById("settings-header-actions");
+  if (!el) return;
+  el.innerHTML = "";
+  if (settingsSubpage) return;
+  // Bluetooth: primary switch lives in the content header (GNOME 50)
+  if (settingsPanelId === "bluetooth") {
+    el.innerHTML = switchHtml("bluetoothEnabled", settingsState.bluetoothEnabled);
+  }
+}
+
+function renderSettingsContent() {
+  if (!settingsContent || !settingsPanelTitle) return;
+  const panel = currentPanel();
+  const title = settingsSubpage?.title || panel?.name || "Settings";
+  settingsPanelTitle.textContent = title;
+  if (settingsBackBtn) settingsBackBtn.hidden = !settingsSubpage;
+  const header = settingsWindow?.querySelector(".settings-content-header");
+  header?.classList.toggle("has-back", Boolean(settingsSubpage));
+  renderSettingsHeaderActions();
+
+  let html = "";
+  if (settingsSubpage) {
+    html = renderSettingsSubpage(settingsSubpage.id);
+  } else {
+    html = renderSettingsPanel(settingsPanelId);
+  }
+  settingsContent.innerHTML = `<div class="settings-page">${html}</div>`;
+  bindSettingsContentHandlers();
+  // Header-action switches (outside content root)
+  document.querySelectorAll("#settings-header-actions .settings-switch").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const key = btn.dataset.setting;
+      if (!key) return;
+      const next = !btn.classList.contains("on");
+      setSettingValue(key, next);
+      renderSettingsContent();
+    });
+  });
+}
+
+function renderSettingsPanel(id) {
+  switch (id) {
+    case "wifi":
+      return renderWifiPanel();
+    case "network":
+      return renderNetworkPanel();
+    case "bluetooth":
+      return renderBluetoothPanel();
+    case "display":
+      return renderDisplayPanel();
+    case "sound":
+      return renderSoundPanel();
+    case "power":
+      return renderPowerPanel();
+    case "multitasking":
+      return renderMultitaskingPanel();
+    case "background":
+      return renderAppearancePanel();
+    case "applications":
+      return renderAppsPanel();
+    case "notifications":
+      return renderNotificationsPanel();
+    case "search":
+      return renderSearchPanel();
+    case "online-accounts":
+      return renderOnlineAccountsPanel();
+    case "sharing":
+      return renderSharingPanel();
+    case "wellbeing":
+      return renderWellbeingPanel();
+    case "mouse":
+      return renderMousePanel();
+    case "keyboard":
+      return renderKeyboardPanel();
+    case "color":
+      return renderColorPanel();
+    case "printers":
+      return renderPrintersPanel();
+    case "wacom":
+      return renderWacomPanel();
+    case "universal-access":
+      return renderAccessibilityPanel();
+    case "privacy":
+      return renderPrivacyPanel();
+    case "system":
+      return renderSystemPanel();
+    default:
+      return `<div class="settings-status"><div class="settings-status-title">Panel</div></div>`;
+  }
+}
+
+function renderWifiPanel() {
+  if (!settingsState.wifiEnabled) {
+    return `
+      <div class="settings-status">
+        <img class="settings-status-icon" src="${SETTINGS_ICON}network-wireless-symbolic.svg" alt="" />
+        <div class="settings-status-title">Wi-Fi Turned Off</div>
+        <div class="settings-status-sub">Turn on Wi-Fi to see available networks.</div>
+        <button type="button" class="settings-btn suggested" data-action="enable-wifi">Turn On</button>
+      </div>`;
+  }
+  return (
+    groupStart(null, {
+      suffix: `<button type="button" class="settings-add-btn" title="Add" aria-label="Add">${addIconHtml()}</button>`,
+    }) +
+    `
+      <div class="settings-row">
+        <div class="settings-row-main">
+          <div class="settings-row-text">
+            <div class="settings-row-title">Home-5G</div>
+            <div class="settings-row-sub">Connected</div>
+          </div>
+        </div>
+        <div class="settings-row-suffix">
+          ${switchHtml("wifiEnabled", true)}
+          <button type="button" class="settings-row-icon-btn" title="Options" aria-label="Options">
+            <img class="sym" src="assets/status/cog-wheel-symbolic.svg" alt="" draggable="false" />
+          </button>
+        </div>
+      </div>
+    ` +
+    groupEnd() +
+    groupStart("Visible Networks") +
+    `
+      <button type="button" class="settings-row activatable">
+        <div class="settings-row-main">
+          <div class="settings-row-text">
+            <div class="settings-row-title">Cafe_Guest</div>
+            <div class="settings-row-sub">Open</div>
+          </div>
+        </div>
+        <div class="settings-row-suffix">${chevronHtml()}</div>
+      </button>
+      <button type="button" class="settings-row activatable">
+        <div class="settings-row-main">
+          <div class="settings-row-text">
+            <div class="settings-row-title">Neighbor-2.4</div>
+            <div class="settings-row-sub">WPA2</div>
+          </div>
+        </div>
+        <div class="settings-row-suffix">${chevronHtml()}</div>
+      </button>
+    ` +
+    groupEnd()
+  );
+}
+
+function renderNetworkPanel() {
+  return (
+    groupStart("Wired", {
+      suffix: `<button type="button" class="settings-add-btn" title="Add Connection" aria-label="Add Connection">${addIconHtml()}</button>`,
+    }) +
+    `
+      <div class="settings-row">
+        <div class="settings-row-main">
+          <div class="settings-row-text">
+            <div class="settings-row-title">Connected — 100 Mb/s</div>
+          </div>
+        </div>
+        <div class="settings-row-suffix">
+          ${switchHtml("wiredEnabled", true)}
+          <button type="button" class="settings-row-icon-btn" title="Options" aria-label="Options">
+            <img class="sym" src="assets/status/cog-wheel-symbolic.svg" alt="" draggable="false" />
+          </button>
+        </div>
+      </div>
+    ` +
+    groupEnd() +
+    groupStart("VPN", {
+      suffix: `<button type="button" class="settings-add-btn" title="Add VPN" aria-label="Add VPN">${addIconHtml()}</button>`,
+    }) +
+    `<div class="settings-empty-card">Not set up</div>` +
+    groupEnd() +
+    groupStart("Proxy") +
+    rowNav("Proxy", null, "proxy", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-network-proxy-symbolic.svg",
+      value: "Off",
+    }) +
+    groupEnd()
+  );
+}
+
+function renderBluetoothPanel() {
+  if (!settingsState.bluetoothEnabled) {
+    return `
+      <div class="settings-status">
+        <img class="settings-status-icon" src="${SETTINGS_ICON}org.gnome.Settings-bluetooth-symbolic.svg" alt="" />
+        <div class="settings-status-title">Bluetooth Turned Off</div>
+        <div class="settings-status-sub">Turn on Bluetooth to connect devices.</div>
+      </div>`;
+  }
+  return (
+    pageIntro(
+      `Visible as “${settingsState.deviceName}” and available for Bluetooth file transfers. Transferred files are placed in the <span class="settings-link">Downloads</span> folder.`
+    ) +
+    groupStart("Devices", {
+      suffix: `<button type="button" class="settings-row-icon-btn" title="Refresh" aria-label="Refresh"><img class="sym" src="assets/settings/org.gnome.Settings-screen-time-symbolic.svg" alt="" draggable="false" style="opacity:.7" /></button>`,
+    }) +
+    `
+      <button type="button" class="settings-row activatable">
+        <div class="settings-row-main">
+          <div class="settings-row-text">
+            <div class="settings-row-title">DualSense Wireless Controller</div>
+          </div>
+        </div>
+        <div class="settings-row-suffix"><span class="settings-value">Disconnected</span></div>
+      </button>
+      <button type="button" class="settings-row activatable">
+        <div class="settings-row-main">
+          <div class="settings-row-text">
+            <div class="settings-row-title">Wireless Controller</div>
+          </div>
+        </div>
+        <div class="settings-row-suffix"><span class="settings-value">Disconnected</span></div>
+      </button>
+      <button type="button" class="settings-row activatable">
+        <div class="settings-row-main">
+          <div class="settings-row-text">
+            <div class="settings-row-title">Galaxy S26 Ultra</div>
+          </div>
+        </div>
+        <div class="settings-row-suffix"><span class="settings-value">Not Set Up</span></div>
+      </button>
+    ` +
+    groupEnd()
+  );
+}
+
+function renderDisplayPanel() {
+  const s = settingsState;
+  return (
+    groupStart(null) +
+    rowCombo("Orientation", "Landscape") +
+    rowCombo("Resolution", "1920 × 1080 (16:9)") +
+    rowCombo("Refresh Rate", "100.00 Hz") +
+    rowToggle("Adjust for TV", null, "adjustForTv", false) +
+    rowCombo("Scale", s.displayScale.replace("%", " %")) +
+    groupEnd() +
+    groupStart(null) +
+    rowNav("Night Light", null, "night-light", {
+      icon: "assets/status/night-light-symbolic.svg",
+      value: s.nightLight ? "On" : "Off",
+    }) +
+    groupEnd()
+  );
+}
+
+function renderSoundPanel() {
+  const s = settingsState;
+  const spk = "assets/status/audio-volume-medium-symbolic.svg";
+  return (
+    groupStart("Output", {
+      suffix: `<div class="settings-group-actions"><span class="settings-level-meter" title="Level"><i style="width:45%"></i></span><button type="button" class="settings-btn flat">Test…</button></div>`,
+    }) +
+    rowCombo("Output Device", "Line Out - Ryzen HD Audio Controller") +
+    rowSliderInline("Output Volume", "volumeOutput", s.volumeOutput, { icon: spk }) +
+    rowSliderInline("Balance", "volumeBalance", s.volumeBalance) +
+    rowToggle(
+      "Overamplification",
+      "Allow volume to exceed 100%, with reduced sound quality",
+      "overamplification",
+      s.overamplification
+    ) +
+    groupEnd() +
+    groupStart("Input", {
+      suffix: `<span class="settings-level-meter" title="Level"><i style="width:30%"></i></span>`,
+    }) +
+    rowCombo("Input Device", "Rear Microphone - Ryzen HD Audio Controller") +
+    rowSliderInline("Input Volume", "volumeInput", s.volumeInput, {
+      icon: SETTINGS_ICON + "org.gnome.Settings-microphone-access-symbolic.svg",
+    }) +
+    groupEnd() +
+    groupStart("Sounds") +
+    rowNav("Volume Levels", null, "volume-levels") +
+    rowNav("Alert Sound", null, "alert-sound", { value: "Default" }) +
+    rowToggle("Startup Sound", null, "startupSound", s.startupSound) +
+    groupEnd()
+  );
+}
+
+function renderPowerPanel() {
+  const s = settingsState;
+  return (
+    groupStart("Power Mode") +
+    rowRadio(
+      "Performance",
+      "High performance and power usage",
+      "powerMode",
+      "performance",
+      s.powerMode === "performance"
+    ) +
+    rowRadio(
+      "Balanced",
+      "Standard performance and power usage",
+      "powerMode",
+      "balanced",
+      s.powerMode === "balanced"
+    ) +
+    rowRadio(
+      "Power Saver",
+      "Reduced performance and power usage",
+      "powerMode",
+      "power-saver",
+      s.powerMode === "power-saver"
+    ) +
+    groupEnd() +
+    groupStart("General") +
+    rowCombo("Power Button Behavior", s.powerButtonBehavior) +
+    groupEnd() +
+    groupStart("Power Saving") +
+    rowToggle(
+      "Automatic Screen Blank",
+      "Turn the screen off after a period of inactivity",
+      "autoScreenBlank",
+      s.autoScreenBlank
+    ) +
+    rowCombo("Delay", s.screenBlankDelay, { disabled: true }) +
+    rowToggle("Automatic Suspend", null, "autoSuspend", s.autoSuspend) +
+    rowCombo("Delay", s.suspendDelay) +
+    groupEnd() +
+    (s.autoSuspend
+      ? ""
+      : `<div class="settings-info-banner">
+          <img class="settings-info-icon" src="${SETTINGS_ICON}org.gnome.Settings-about-symbolic.svg" alt="" />
+          <div>Disabling automatic suspend will result in higher power consumption. It is recommended to keep automatic suspend enabled.</div>
+        </div>`)
+  );
+}
+
+function renderMultitaskingPanel() {
+  const s = settingsState;
+  const mt = "assets/settings/multitasking/";
+  return (
+    groupStart("Screen Edges") +
+    `<div class="settings-illustrated">
+      <div class="settings-illustrated-head">
+        <div class="settings-row-text">
+          <div class="settings-row-title">Hot Corner</div>
+          <div class="settings-row-sub">Touch the top-left corner to open the Activities Overview</div>
+        </div>
+        ${switchHtml("hotCorner", s.hotCorner)}
+      </div>
+      <div class="settings-illustrated-preview">
+        <img class="settings-illus-img" src="${mt}hot-corner.svg" alt="" draggable="false" />
+      </div>
+    </div>
+    <div class="settings-illustrated">
+      <div class="settings-illustrated-head">
+        <div class="settings-row-text">
+          <div class="settings-row-title">Window Resize</div>
+          <div class="settings-row-sub">Drag windows against the top, left, and right screen edges to resize them</div>
+        </div>
+        ${switchHtml("edgeTiling", s.edgeTiling)}
+      </div>
+      <div class="settings-illustrated-preview">
+        <img class="settings-illus-img" src="${mt}active-screen-edges.svg" alt="" draggable="false" />
+      </div>
+    </div>` +
+    groupEnd() +
+    groupStart("Workspaces") +
+    rowRadio(
+      "Dynamic Workspaces",
+      "Automatically removes empty workspaces",
+      "dynamicWorkspaces",
+      "true",
+      s.dynamicWorkspaces
+    ) +
+    rowRadio(
+      "Fixed Number of Workspaces",
+      "Specify a number of permanent workspaces",
+      "dynamicWorkspaces",
+      "false",
+      !s.dynamicWorkspaces
+    ) +
+    `<div class="settings-row${!s.dynamicWorkspaces ? "" : " is-disabled"}">
+      <div class="settings-row-main"><div class="settings-row-text"><div class="settings-row-title">Number of Workspaces</div></div></div>
+      <div class="settings-row-suffix">
+        <span class="settings-value">${s.workspaceCount}</span>
+        <button type="button" class="settings-row-icon-btn" data-action="ws-dec" aria-label="Decrease">−</button>
+        <button type="button" class="settings-row-icon-btn" data-action="ws-inc" aria-label="Increase">+</button>
+      </div>
+    </div>` +
+    groupEnd() +
+    groupStart("Multi-Monitor") +
+    `<button type="button" class="settings-illustrated activatable" data-radio="multiMonitorWorkspaces" data-value="primary" style="width:100%;text-align:left;cursor:pointer;background:transparent;border:none;color:inherit;font:inherit">
+      <div class="settings-illustrated-head">
+        <div class="settings-row-main" style="gap:14px">
+          ${radioHtml(s.multiMonitorWorkspaces === "primary")}
+          <div class="settings-row-text"><div class="settings-row-title">Workspaces on primary display only</div></div>
+        </div>
+      </div>
+      <div class="settings-illustrated-preview">
+        <img class="settings-illus-img" src="${mt}workspaces-primary-display.svg" alt="" draggable="false" />
+      </div>
+    </button>
+    <button type="button" class="settings-illustrated activatable" data-radio="multiMonitorWorkspaces" data-value="all" style="width:100%;text-align:left;cursor:pointer;background:transparent;border:none;color:inherit;font:inherit">
+      <div class="settings-illustrated-head">
+        <div class="settings-row-main" style="gap:14px">
+          ${radioHtml(s.multiMonitorWorkspaces === "all")}
+          <div class="settings-row-text"><div class="settings-row-title">Workspaces on all displays</div></div>
+        </div>
+      </div>
+      <div class="settings-illustrated-preview">
+        <img class="settings-illus-img" src="${mt}workspaces-span-displays.svg" alt="" draggable="false" />
+      </div>
+    </button>` +
+    groupEnd() +
+    groupStart("App Switching") +
+    rowRadio(
+      "Include apps from all workspaces",
+      null,
+      "appSwitchWorkspaces",
+      "all",
+      s.appSwitchWorkspaces === "all"
+    ) +
+    rowRadio(
+      "Include apps from the current workspace only",
+      null,
+      "appSwitchWorkspaces",
+      "current",
+      s.appSwitchWorkspaces === "current"
+    ) +
+    rowRadio(
+      "Include apps from all monitors",
+      null,
+      "appSwitchMonitors",
+      "all",
+      s.appSwitchMonitors === "all"
+    ) +
+    rowRadio(
+      "Include apps from each monitor only",
+      null,
+      "appSwitchMonitors",
+      "each",
+      s.appSwitchMonitors === "each"
+    ) +
+    groupEnd()
+  );
+}
+
+const SETTINGS_WALLPAPERS = {
+  adwaita: {
+    webp: "assets/wallpapers/adwaita-d.webp",
+    jpg: "assets/wallpapers/adwaita-d.jpg",
+    label: "Adwaita",
+  },
+  fold: {
+    webp: "assets/wallpapers/fold-d.webp",
+    jpg: "assets/wallpapers/fold-d.jpg",
+    label: "Fold",
+  },
+  glass: {
+    webp: "assets/wallpapers/glass-chip-l.webp",
+    jpg: "assets/wallpapers/glass-chip-l.jpg",
+    label: "Glass Chip",
+  },
+};
+
+function applyWallpaper(id) {
+  const wall = SETTINGS_WALLPAPERS[id] || SETTINGS_WALLPAPERS.adwaita;
+  settingsState.wallpaper = SETTINGS_WALLPAPERS[id] ? id : "adwaita";
+  document.documentElement.style.setProperty("--wallpaper-1", `url("${wall.webp}")`);
+  document.documentElement.style.setProperty("--wallpaper-2", `url("${wall.jpg}")`);
+  document.documentElement.style.setProperty("--wallpaper-3", `url("${wall.webp}")`);
+}
+
+function renderAppearancePanel() {
+  const s = settingsState;
+  const currentWall =
+    SETTINGS_WALLPAPERS[s.wallpaper]?.webp || SETTINGS_WALLPAPERS.adwaita.webp;
+  const accents = SETTINGS_ACCENTS.map(
+    (a) =>
+      `<button type="button" class="settings-accent${
+        s.accent === a.id ? " selected" : ""
+      }" data-accent="${a.id}" style="background:${a.color}" title="${a.id}" aria-label="${a.id}"></button>`
+  ).join("");
+
+  const walls = Object.entries(SETTINGS_WALLPAPERS)
+    .map(
+      ([id, w]) =>
+        `<button type="button" class="settings-wallpaper${
+          s.wallpaper === id ? " selected" : ""
+        }" style="background-image:url('${w.webp}')" data-wall="${id}" aria-label="${w.label}"></button>`
+    )
+    .join("");
+
+  return (
+    groupStart("Style") +
+    `<div class="settings-style-grid">
+      <button type="button" class="settings-style-option${
+        !s.darkStyle ? " selected" : ""
+      }" data-style="default">
+        <span class="settings-style-preview light" style="background-image:url('${currentWall}')">
+          <span class="win-a"></span><span class="win-b"></span>
+        </span>
+        <span>Default</span>
+      </button>
+      <button type="button" class="settings-style-option${
+        s.darkStyle ? " selected" : ""
+      }" data-style="dark">
+        <span class="settings-style-preview dark" style="background-image:url('${currentWall}')">
+          <span class="win-a"></span><span class="win-b"></span>
+        </span>
+        <span>Dark</span>
+      </button>
+    </div>` +
+    groupEnd() +
+    groupStart("Accent Color") +
+    `<div class="settings-accent-row">${accents}</div>` +
+    groupEnd() +
+    groupStart("Background", {
+      suffix: `<button type="button" class="settings-link-btn" data-action="add-picture">+ Add Picture…</button>`,
+    }) +
+    `<div class="settings-wallpaper-grid">${walls}</div>` +
+    groupEnd()
+  );
+}
+
+function renderAppsPanel() {
+  return (
+    groupStart(null) +
+    rowNav("Default Apps", null, "default-apps") +
+    rowNav("Removable Media", null, "removable-media") +
+    groupEnd() +
+    groupStart(null) +
+    `
+      <button type="button" class="settings-row activatable">
+        <div class="settings-row-main">
+          <img class="settings-row-icon" src="assets/Brave.png" alt="" draggable="false" style="filter:none;width:22px;height:22px;border-radius:6px" />
+          <div class="settings-row-text"><div class="settings-row-title">Brave</div></div>
+        </div>
+        <div class="settings-row-suffix">${chevronHtml()}</div>
+      </button>
+      <button type="button" class="settings-row activatable">
+        <div class="settings-row-main">
+          <img class="settings-row-icon" src="assets/apps/org.gnome.Nautilus.png" alt="" draggable="false" style="filter:none;width:22px;height:22px" />
+          <div class="settings-row-text"><div class="settings-row-title">Files</div></div>
+        </div>
+        <div class="settings-row-suffix">${chevronHtml()}</div>
+      </button>
+      <button type="button" class="settings-row activatable">
+        <div class="settings-row-main">
+          <img class="settings-row-icon" src="assets/Steam_icon.png" alt="" draggable="false" style="filter:none;width:22px;height:22px;border-radius:6px" />
+          <div class="settings-row-text"><div class="settings-row-title">Steam</div></div>
+        </div>
+        <div class="settings-row-suffix">${chevronHtml()}</div>
+      </button>
+    ` +
+    groupEnd()
+  );
+}
+
+function renderNotificationsPanel() {
+  const s = settingsState;
+  return (
+    groupStart(null) +
+    rowToggle("Do Not Disturb", null, "dnd", s.dnd) +
+    rowToggle("Lock Screen Notifications", null, "lockScreenNotifications", s.lockScreenNotifications) +
+    groupEnd() +
+    groupStart(null) +
+    `
+      <button type="button" class="settings-row activatable">
+        <div class="settings-row-main">
+          <img class="settings-row-icon" src="assets/Brave.png" alt="" style="filter:none;width:22px;height:22px;border-radius:6px" draggable="false" />
+          <div class="settings-row-text"><div class="settings-row-title">Brave</div></div>
+        </div>
+        <div class="settings-row-suffix"><span class="settings-value">On</span>${chevronHtml()}</div>
+      </button>
+      <button type="button" class="settings-row activatable">
+        <div class="settings-row-main">
+          <img class="settings-row-icon" src="assets/Steam_icon.png" alt="" style="filter:none;width:22px;height:22px;border-radius:6px" draggable="false" />
+          <div class="settings-row-text"><div class="settings-row-title">Steam</div></div>
+        </div>
+        <div class="settings-row-suffix"><span class="settings-value">On</span>${chevronHtml()}</div>
+      </button>
+    ` +
+    groupEnd()
+  );
+}
+
+function renderSearchPanel() {
+  return (
+    groupStart(null) +
+    rowToggle(
+      "App Search",
+      "Include app-provided search results",
+      "appSearch",
+      settingsState.appSearch
+    ) +
+    groupEnd() +
+    groupStart("Search Results") +
+    `
+      <div class="settings-row">
+        <div class="settings-row-main"><div class="settings-row-text"><div class="settings-row-title">Files</div></div></div>
+        <div class="settings-row-suffix">${switchHtml("searchFiles", true)}</div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-main"><div class="settings-row-text"><div class="settings-row-title">Calculator</div></div></div>
+        <div class="settings-row-suffix">${switchHtml("searchCalc", true)}</div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-main"><div class="settings-row-text"><div class="settings-row-title">Web</div></div></div>
+        <div class="settings-row-suffix">${switchHtml("searchWeb", false)}</div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-main"><div class="settings-row-text"><div class="settings-row-title">Characters</div></div></div>
+        <div class="settings-row-suffix">${switchHtml("searchChars", true)}</div>
+      </div>
+    ` +
+    groupEnd()
+  );
+}
+
+function renderOnlineAccountsPanel() {
+  const providers = [
+    { name: "Google", sub: "Email, calendar, contacts, files", color: "#fff", fg: "#4285F4", letter: "G" },
+    { name: "Microsoft 365", sub: "Email, calendar, contacts, files", color: "#2F2A6B", letter: "❖" },
+    { name: "Microsoft Exchange", sub: "Email, calendar, contacts", color: "#0078D4", letter: "E" },
+    { name: "Nextcloud", sub: "Calendar, contacts, files", color: "#0082C9", letter: "☁" },
+    { name: "Email Server", sub: "IMAP/SMTP", muted: true, letter: "✉" },
+    { name: "Calendar, Contacts and Files", sub: "WebDAV", muted: true, letter: "📅" },
+    { name: "Enterprise Authentication", sub: "Kerberos", muted: true, letter: "🔑" },
+  ];
+  const rows = providers
+    .map((p) => {
+      const icon = p.muted
+        ? `<span class="settings-provider-icon muted">${p.letter}</span>`
+        : `<span class="settings-provider-icon" style="background:${p.color};color:${p.fg || "#fff"}">${p.letter}</span>`;
+      return `
+        <button type="button" class="settings-row activatable">
+          <div class="settings-row-main">
+            ${icon}
+            <div class="settings-row-text">
+              <div class="settings-row-title">${p.name}</div>
+              <div class="settings-row-sub">${p.sub}</div>
+            </div>
+          </div>
+          <div class="settings-row-suffix">${chevronHtml()}</div>
+        </button>`;
+    })
+    .join("");
+
+  return (
+    pageIntro("Allow apps to access online services by connecting your cloud accounts") +
+    groupStart("Connect an Account") +
+    rows +
+    groupEnd()
+  );
+}
+
+function renderSharingPanel() {
+  const s = settingsState;
+  return (
+    groupStart(null) +
+    `
+      <div class="settings-row">
+        <div class="settings-row-main">
+          <div class="settings-row-text">
+            <div class="settings-row-sub">Device Name</div>
+            <div class="settings-device-name">${s.deviceName}</div>
+          </div>
+        </div>
+        <div class="settings-row-suffix">
+          <button type="button" class="settings-row-icon-btn" title="Copy" aria-label="Copy">
+            <img class="sym" src="assets/settings/edit-copy-symbolic.svg" alt="" draggable="false" />
+          </button>
+        </div>
+      </div>
+    ` +
+    groupEnd() +
+    groupStart(null) +
+    rowNav(
+      "Media Sharing",
+      "Stream music, photos and videos to devices on the current network",
+      "media-sharing",
+      {
+        icon: SETTINGS_ICON + "org.gnome.Settings-sharing-symbolic.svg",
+        value: s.mediaSharing ? "On" : "Off",
+      }
+    ) +
+    groupEnd()
+  );
+}
+
+function renderWellbeingPanel() {
+  const s = settingsState;
+  const days = [
+    { d: "M", h: 72 },
+    { d: "T", h: 28 },
+    { d: "W", h: 4 },
+    { d: "T", h: 4 },
+    { d: "F", h: 4 },
+    { d: "S", h: 4 },
+    { d: "S", h: 4 },
+  ];
+  const bars = days
+    .map(
+      (x, i) =>
+        `<div class="bar${i === 1 ? " today" : ""}" data-day="${x.d}" style="height:${x.h}%"></div>`
+    )
+    .join("");
+
+  return (
+    groupStart("Screen Time", {
+      suffix: `<button type="button" class="settings-row-icon-btn" title="More" aria-label="More"><img class="sym" src="assets/settings/open-menu-symbolic.svg" alt="" draggable="false" /></button>`,
+    }) +
+    `<div class="settings-wellbeing-card">
+      <div class="settings-wellbeing-stats">
+        <div class="settings-wellbeing-stat">
+          <div class="label">Today</div>
+          <div class="value">1h 54m</div>
+          <div class="avg">Average Tuesday<br/>6h 28m</div>
+        </div>
+        <div class="settings-wellbeing-stat">
+          <div class="label">This Week</div>
+          <div class="value">8h 22m</div>
+          <div class="avg">Average Week<br/>63h 9m</div>
+        </div>
+      </div>
+      <div class="settings-wellbeing-chart">
+        <div class="grid-line" style="bottom:78%"></div>
+        <div class="grid-line" style="bottom:56%"></div>
+        ${bars}
+      </div>
+      <div class="settings-wellbeing-nav">
+        <button type="button" aria-label="Previous"><img class="sym" src="assets/actions/go-previous-symbolic.svg" alt="" /></button>
+        <button type="button" aria-label="Next"><img class="sym" src="assets/actions/go-next-symbolic.svg" alt="" /></button>
+      </div>
+    </div>` +
+    groupEnd() +
+    groupStart("Screen Limits") +
+    rowToggle("Screen Time Limit", null, "screenTimeLimit", s.screenTimeLimit) +
+    rowCombo("Daily Limit", "8 hours") +
+    rowToggle(
+      "Grayscale",
+      "Black and white screen for screen limits",
+      "grayscale",
+      s.grayscale,
+      { disabled: !s.screenTimeLimit }
+    ) +
+    groupEnd() +
+    groupStart("Break Reminders") +
+    rowToggle(
+      "Eyesight Reminders",
+      "Reminders to look away from the screen",
+      "eyesightReminders",
+      s.eyesightReminders
+    ) +
+    rowToggle(
+      "Movement Reminders",
+      "Reminders to move around",
+      "movementReminders",
+      s.movementReminders
+    ) +
+    rowCombo("Movement Break Schedule", "5 minutes / 30 minutes", {
+      disabled: !s.movementReminders,
+    }) +
+    rowToggle(
+      "Sounds",
+      "Play a sound when a break ends",
+      "breakSounds",
+      s.breakSounds,
+      { disabled: !s.eyesightReminders && !s.movementReminders }
+    ) +
+    groupEnd()
+  );
+}
+
+function renderMousePanel() {
+  const s = settingsState;
+  const traditional = !s.naturalScroll;
+  return (
+    groupStart("General") +
+    `<div class="settings-row">
+      <div class="settings-row-main">
+        <div class="settings-row-text">
+          <div class="settings-row-title">Primary Button</div>
+          <div class="settings-row-sub">Order of physical buttons on mice and touchpads</div>
+        </div>
+      </div>
+      <div class="settings-row-suffix">
+        <div class="settings-segmented" role="group" aria-label="Primary Button">
+          <button type="button" class="settings-segment${
+            s.primaryButton === "left" ? " selected" : ""
+          }" data-primary="left">Left</button>
+          <button type="button" class="settings-segment${
+            s.primaryButton === "right" ? " selected" : ""
+          }" data-primary="right">Right</button>
+        </div>
+      </div>
+    </div>` +
+    groupEnd() +
+    groupStart("Mouse") +
+    rowSliderInline("Pointer Speed", "pointerSpeed", s.pointerSpeed, {
+      ends: ["Slow", "Fast"],
+    }) +
+    rowToggle(
+      "Mouse Acceleration",
+      "Recommended for most users and applications",
+      "mouseAcceleration",
+      s.mouseAcceleration
+    ) +
+    `<div class="settings-row-block" style="border-bottom:none;padding-bottom:4px">
+      <div class="settings-row-title" style="margin-bottom:4px">Scroll Direction</div>
+    </div>
+    <div class="settings-choice-grid">
+      <button type="button" class="settings-choice-card${traditional ? " selected" : ""}" data-radio="naturalScroll" data-value="false">
+        <div class="settings-choice-preview"><div class="settings-scroll-illus"><div class="win"></div><div class="mouse"></div></div></div>
+        <div class="settings-choice-meta">
+          ${radioHtml(traditional)}
+          <div class="settings-row-text">
+            <div class="settings-row-title">Traditional</div>
+            <div class="settings-row-sub">Scrolling moves the view</div>
+          </div>
+        </div>
+      </button>
+      <button type="button" class="settings-choice-card${!traditional ? " selected" : ""}" data-radio="naturalScroll" data-value="true">
+        <div class="settings-choice-preview"><div class="settings-scroll-illus"><div class="win"></div><div class="mouse"></div></div></div>
+        <div class="settings-choice-meta">
+          ${radioHtml(!traditional)}
+          <div class="settings-row-text">
+            <div class="settings-row-title">Natural</div>
+            <div class="settings-row-sub">Scrolling moves the content</div>
+          </div>
+        </div>
+      </button>
+    </div>` +
+    groupEnd() +
+    groupStart(null) +
+    `
+      <button type="button" class="settings-row activatable">
+        <div class="settings-row-main" style="justify-content:center;width:100%">
+          <div class="settings-row-title" style="width:100%;text-align:center">Test Settings</div>
+        </div>
+        <div class="settings-row-suffix">${chevronHtml()}</div>
+      </button>
+    ` +
+    groupEnd()
+  );
+}
+
+function renderKeyboardPanel() {
+  return (
+    groupStart("Input Sources", {
+      description: "Includes keyboard layouts and input methods",
+    }) +
+    `
+      <div class="settings-row">
+        <div class="settings-row-main">
+          <img class="settings-row-icon" src="${SETTINGS_ICON}org.gnome.Settings-keyboard-symbolic.svg" alt="" draggable="false" />
+          <div class="settings-row-text"><div class="settings-row-title">English (US)</div></div>
+        </div>
+        <div class="settings-row-suffix">
+          <button type="button" class="settings-row-icon-btn" title="More" aria-label="More">
+            <img class="sym" src="assets/settings/open-menu-symbolic.svg" alt="" draggable="false" />
+          </button>
+        </div>
+      </div>
+      <button type="button" class="settings-row activatable">
+        <div class="settings-row-main" style="justify-content:center;width:100%">
+          <div class="settings-row-title" style="color:var(--accent);width:100%;text-align:center">+ Add Input Source</div>
+        </div>
+      </button>
+    ` +
+    groupEnd() +
+    groupStart("Input Source Switching", {
+      description:
+        "Input sources can be switched using the Super+Space keyboard shortcut. This can be changed in the keyboard shortcut settings.",
+    }) +
+    rowRadio("Use the same source for all windows", null, "inputSourceMode", "all", true) +
+    rowRadio(
+      "Switch input sources individually for each window",
+      null,
+      "inputSourceMode",
+      "per-window",
+      false
+    ) +
+    groupEnd() +
+    groupStart("Special Character Entry", {
+      description: "Methods for entering symbols and letter variants using the keyboard",
+    }) +
+    rowNav("Alternate Characters Key", null, "alt-chars", { value: "Default" }) +
+    rowNav("Compose Key", null, "compose-key", { value: "Right Alt" }) +
+    groupEnd() +
+    groupStart("Keyboard Shortcuts") +
+    rowNav("View and Customize Shortcuts", null, "shortcuts") +
+    groupEnd()
+  );
+}
+
+function renderColorPanel() {
+  return (
+    pageIntro(
+      `Each device needs an up to date color profile to be color managed — <span class="settings-link">learn more</span>.`
+    ) +
+    groupStart(null) +
+    `
+      <div class="settings-row">
+        <div class="settings-row-main">
+          <div class="settings-row-text">
+            <div class="settings-row-title">GA2701S Monitor</div>
+          </div>
+        </div>
+        <div class="settings-row-suffix">
+          ${switchHtml("colorDeviceEnabled", settingsState.colorDeviceEnabled)}
+          ${chevronHtml()}
+        </div>
+      </div>
+    ` +
+    groupEnd()
+  );
+}
+
+function renderPrintersPanel() {
+  return `
+    <div class="settings-status">
+      <img class="settings-status-icon" src="${SETTINGS_ICON}org.gnome.Settings-printers-symbolic.svg" alt="" />
+      <div class="settings-status-title">No Printers</div>
+      <button type="button" class="settings-btn suggested">Add Printer…</button>
+    </div>`;
+}
+
+function renderWacomPanel() {
+  return `
+    <div class="settings-status">
+      <img class="settings-status-icon" src="${SETTINGS_ICON}org.gnome.Settings-wacom-symbolic.svg" alt="" />
+      <div class="settings-status-title">No tablet detected</div>
+      <div class="settings-status-sub">Plug in a graphics tablet to configure it.</div>
+    </div>`;
+}
+
+function renderAccessibilityPanel() {
+  const s = settingsState;
+  return (
+    groupStart(null) +
+    rowToggle(
+      "Always Show Accessibility Menu",
+      "Display the accessibility menu in the top bar",
+      "alwaysShowA11yMenu",
+      s.alwaysShowA11yMenu
+    ) +
+    groupEnd() +
+    groupStart(null) +
+    rowNav("Seeing", null, "ua-seeing", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-accessibility-seeing-symbolic.svg",
+    }) +
+    rowNav("Hearing", null, "ua-hearing", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-accessibility-hearing-symbolic.svg",
+    }) +
+    rowNav("Typing", null, "ua-typing", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-accessibility-typing-symbolic.svg",
+    }) +
+    rowNav("Pointing and Clicking", null, "ua-pointing", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-accessibility-pointing-symbolic.svg",
+    }) +
+    rowNav("Zoom", null, "ua-zoom", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-accessibility-zoom-symbolic.svg",
+    }) +
+    groupEnd()
+  );
+}
+
+function renderPrivacyPanel() {
+  return (
+    groupStart("System") +
+    rowNav("Screen Lock", "Automatic screen lock", "screen-lock", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-screen-lock-symbolic.svg",
+    }) +
+    rowNav("Location", "Control access to your location", "location", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-location-access-symbolic.svg",
+    }) +
+    rowNav("File History & Trash", "Remove saved data and files", "usage", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-trash-file-history-symbolic.svg",
+    }) +
+    rowNav("Telemetry", "Control error and system reporting", "telemetry", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-device-diagnostics-symbolic.svg",
+    }) +
+    rowNav("Connectivity", "Detect connection issues", "connectivity", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-network-symbolic.svg",
+    }) +
+    rowNav("Security Center", "Configure more security settings", "security-center", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-device-security-symbolic.svg",
+      external: true,
+    }) +
+    groupEnd() +
+    groupStart("Devices") +
+    rowNav("Cameras", "Control camera access", "cameras", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-camera-access-symbolic.svg",
+    }) +
+    rowNav("Device Security", "Hardware security status and information", "device-security", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-device-security-symbolic.svg",
+    }) +
+    groupEnd()
+  );
+}
+
+function renderSystemPanel() {
+  return (
+    groupStart(null) +
+    rowNav("Region & Language", "System language and localization", "region", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-region-symbolic.svg",
+    }) +
+    rowNav("Date & Time", "Time zone and clock settings", "datetime", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-time-symbolic.svg",
+    }) +
+    rowNav("Users", "Add and remove accounts, change password", "users", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-users-symbolic.svg",
+    }) +
+    rowNav("Remote Desktop", "Allow this device to be used remotely", "remote-desktop", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-remote-desktop-symbolic.svg",
+    }) +
+    rowNav("Secure Shell", "SSH network access", "ssh", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-secure-shell-symbolic.svg",
+    }) +
+    rowNav("About", "Hardware details and software versions", "about", {
+      icon: SETTINGS_ICON + "org.gnome.Settings-about-symbolic.svg",
+    }) +
+    groupEnd() +
+    groupStart(null) +
+    `
+      <button type="button" class="settings-row activatable">
+        <div class="settings-row-main">
+          <img class="settings-row-icon" src="${SETTINGS_ICON}org.gnome.Settings-system-symbolic.svg" alt="" draggable="false" />
+          <div class="settings-row-text"><div class="settings-row-title">Software Updates</div></div>
+        </div>
+        <div class="settings-row-suffix">
+          <img class="settings-ext-link" src="assets/settings/go-next-symbolic.svg" alt="" style="transform:rotate(-45deg)" draggable="false" />
+        </div>
+      </button>
+    ` +
+    groupEnd()
+  );
+}
+
+function renderSettingsSubpage(id) {
+  const s = settingsState;
+  switch (id) {
+    case "night-light":
+      return (
+        groupStart(null) +
+        rowToggle("Night Light", "Filter out blue light to reduce eye strain at night", "nightLight", s.nightLight) +
+        groupEnd() +
+        groupStart("Schedule") +
+        rowRadio("Sunset to Sunrise", null, "nlSchedule", "sunset", true) +
+        rowRadio("Manual Schedule", null, "nlSchedule", "manual", false) +
+        groupEnd() +
+        groupStart(null) +
+        `<div class="settings-row-block">
+          <div class="settings-slider-row">
+            <div class="settings-slider-labels"><span>Color Temperature</span></div>
+            <input type="range" class="settings-range" min="0" max="100" value="60" aria-label="Color Temperature" />
+          </div>
+        </div>` +
+        groupEnd()
+      );
+    case "datetime":
+      return (
+        groupStart("Date & Time") +
+        rowToggle(
+          "Automatic Date & Time",
+          "Requires internet access",
+          "autoDatetime",
+          s.autoDatetime
+        ) +
+        rowToggle(
+          "Automatic Time Zone",
+          "Requires location services enabled and internet access",
+          "autoTimezone",
+          s.autoTimezone
+        ) +
+        rowStatic("Time Zone", "America/New_York") +
+        groupEnd() +
+        groupStart("Time Format") +
+        rowRadio("24-hour", null, "timeFormat24", "true", s.timeFormat24) +
+        rowRadio("AM / PM", null, "timeFormat24", "false", !s.timeFormat24) +
+        groupEnd() +
+        /* GNOME 50: First Day of the Week */
+        groupStart(null) +
+        `<div class="settings-row-block">
+          <div class="settings-row-title" style="margin-bottom:8px">First Day of the Week</div>
+          <div class="settings-segmented" role="group" aria-label="First Day of the Week">
+            <button type="button" class="settings-segment${
+              s.firstDayOfWeek === "sunday" ? " selected" : ""
+            }" data-first-day="sunday">Sunday</button>
+            <button type="button" class="settings-segment${
+              s.firstDayOfWeek === "monday" ? " selected" : ""
+            }" data-first-day="monday">Monday</button>
+          </div>
+          <div class="settings-row-sub" style="margin-top:8px">Also respected by Calendar and other apps</div>
+        </div>` +
+        groupEnd() +
+        groupStart("Clock & Calendar") +
+        rowToggle("Week Day", null, "weekDayInClock", s.weekDayInClock) +
+        rowToggle("Date", null, "dateInClock", s.dateInClock) +
+        rowToggle("Seconds", null, "secondsInClock", s.secondsInClock) +
+        rowToggle(
+          "Week Numbers",
+          "Shown in the dropdown calendar",
+          "weekNumbers",
+          s.weekNumbers
+        ) +
+        groupEnd()
+      );
+    case "ua-seeing": {
+      const textPx = [14, 15, 17][s.textSize] || 15;
+      return (
+        groupStart(null) +
+        rowToggle(
+          "Screen Reader",
+          "The screen reader reads displayed text as you move the focus",
+          "screenReader",
+          false
+        ) +
+        rowToggle(
+          "High Contrast",
+          "Increase color contrast of foreground and background interface elements",
+          "highContrast",
+          s.highContrast
+        ) +
+        rowToggle(
+          "On/Off Shapes",
+          "Use shapes to indicate state in addition to or instead of color",
+          "onOffShapes",
+          s.onOffShapes
+        ) +
+        /* GNOME 50: Reduced Motion */
+        rowToggle(
+          "Reduced Motion",
+          "Toggle reduced motion animations throughout the user interface",
+          "reducedMotion",
+          s.reducedMotion
+        ) +
+        groupEnd() +
+        groupStart("Text Size") +
+        `<div class="settings-text-preview">
+          <div class="settings-text-preview-sample" style="font-size:${textPx}px">Sample text</div>
+        </div>
+        <div class="settings-row-block">
+          <div class="settings-text-ends"><span class="small-a">A</span><span class="large-a">A</span></div>
+          <input type="range" class="settings-range" data-slider="textSize" min="0" max="2" step="1" value="${s.textSize}" aria-label="Text Size" />
+        </div>` +
+        groupEnd() +
+        groupStart(null) +
+        rowToggle(
+          "Sound Keys",
+          "Beep when Num Lock or Caps Lock are turned on or off",
+          "soundKeys",
+          false
+        ) +
+        rowToggle("Always Show Scrollbars", "Make scrollbars always visible", "alwaysScrollbars", false) +
+        groupEnd()
+      );
+    }
+    case "about":
+      return renderAboutPage(s);
+    case "system-details":
+      return renderSystemDetailsDialog();
+    case "region":
+      return (
+        groupStart(null) +
+        rowStatic("Language", "English (United States)") +
+        rowStatic("Formats", "United States") +
+        groupEnd()
+      );
+    case "users":
+      return (
+        groupStart("Users") +
+        `
+          <button type="button" class="settings-row activatable">
+            <div class="settings-row-main">
+              <div class="settings-row-text">
+                <div class="settings-row-title">Leon</div>
+                <div class="settings-row-sub">Administrator · Standard</div>
+              </div>
+            </div>
+            <div class="settings-row-suffix">${chevronHtml()}</div>
+          </button>
+        ` +
+        groupEnd() +
+        `<div class="settings-btn-row"><button type="button" class="settings-btn">Add User…</button></div>`
+      );
+    case "remote-desktop":
+      return (
+        groupStart(null) +
+        rowToggle("Desktop Sharing", "Allow remote connections to this desktop", "rdpShare", false) +
+        rowToggle("Remote Login", "Allow remote login sessions", "rdpLogin", false) +
+        groupEnd() +
+        `<div class="settings-banner">GNOME 50 adds hardware-accelerated remote desktop (Vulkan / VA-API), HiDPI client scaling, and camera redirection.</div>`
+      );
+    case "screen-lock":
+      return (
+        groupStart(null) +
+        rowToggle("Automatic Screen Lock", null, "screenLock", s.screenLock) +
+        rowStatic("Blank Screen Delay", "5 minutes") +
+        groupEnd()
+      );
+    case "location":
+      return (
+        groupStart(null) +
+        rowToggle(
+          "Location Services",
+          "Allow apps to determine your location",
+          "location",
+          s.location
+        ) +
+        groupEnd()
+      );
+    case "ua-hearing":
+    case "ua-typing":
+    case "ua-pointing":
+    case "ua-zoom":
+      return `<div class="settings-status"><div class="settings-status-title">${
+        settingsSubpage?.title || "Settings"
+      }</div><div class="settings-status-sub">Preview of this accessibility page.</div></div>`;
+    default:
+      return `<div class="settings-status"><div class="settings-status-title">${
+        settingsSubpage?.title || "Settings"
+      }</div><div class="settings-status-sub">This page is a visual preview.</div></div>`;
+  }
+}
+
+const ACCENT_BLUE = "#3584e4";
+let accentFlashTimer = 0;
+
+function setAccentCss(color) {
+  document.documentElement.style.setProperty("--accent", color);
+  document.documentElement.style.setProperty("--accent-hover", color);
+}
+
+/**
+ * Accent swatches are decorative only: flash the chosen colour for 1s,
+ * then snap selection and CSS back to blue.
+ */
+function flashAccentPreview(id) {
+  const accent = SETTINGS_ACCENTS.find((a) => a.id === id);
+  if (!accent) return;
+
+  clearTimeout(accentFlashTimer);
+  setAccentCss(accent.color);
+  settingsState.accent = id;
+
+  // Update selected ring without full panel re-render
+  document.querySelectorAll(".settings-accent").forEach((btn) => {
+    btn.classList.toggle("selected", btn.dataset.accent === id);
+  });
+
+  accentFlashTimer = window.setTimeout(() => {
+    settingsState.accent = "blue";
+    setAccentCss(ACCENT_BLUE);
+    document.querySelectorAll(".settings-accent").forEach((btn) => {
+      btn.classList.toggle("selected", btn.dataset.accent === "blue");
+    });
+  }, 1000);
+}
+
+function applyAccentColor(id) {
+  // Kept for any callers; real accent is always blue after flash.
+  flashAccentPreview(id);
+}
+
+function aboutField(label, value) {
+  return `
+    <div class="settings-about-field">
+      <div class="settings-about-field-label">${label}</div>
+      <div class="settings-about-field-value">${value}</div>
+    </div>`;
+}
+
+function renderAboutPage(s) {
+  return `
+    <div class="settings-about-hero">
+      <img class="settings-about-logo" src="docs/favicon/GNOME.png" alt="" draggable="false" />
+      <div class="settings-about-name">GNOME</div>
+    </div>
+    ${groupStart(null)}
+    <div class="settings-row settings-about-device-row">
+      <div class="settings-row-main">
+        <div class="settings-row-text">
+          <div class="settings-about-field-label">Device Name</div>
+          <div class="settings-about-field-value settings-device-name">${s.deviceName}</div>
+        </div>
+      </div>
+      <div class="settings-row-suffix">
+        <button type="button" class="settings-row-icon-btn" title="Copy" aria-label="Copy" data-action="copy-device-name">
+          <img class="sym" src="assets/settings/edit-copy-symbolic.svg" alt="" draggable="false" />
+        </button>
+      </div>
+    </div>
+    ${groupEnd()}
+    ${groupStart(null)}
+    ${aboutField("Operating System", "GNOME OS")}
+    ${aboutField("Hardware Model", "Micro-Star International Co., Ltd. MS-7D14")}
+    ${aboutField("Processor", "AMD Ryzen™ 7 5700G with Radeon™ Graphics × 16")}
+    ${aboutField("Memory", "16.0 GiB")}
+    ${aboutField("Disk Capacity", "1.5 TB")}
+    <button type="button" class="settings-row activatable settings-about-field-row" data-nav="system-details">
+      <div class="settings-row-main">
+        <div class="settings-row-text">
+          <div class="settings-row-title">System Details</div>
+        </div>
+      </div>
+      <div class="settings-row-suffix">${chevronHtml()}</div>
+    </button>
+    ${groupEnd()}`;
+}
+
+function renderSystemDetailsDialog() {
+  // Inline page variant if navigated; prefer modal host when on About
+  return `
+    <div class="settings-system-details-page">
+      <div class="settings-details-cols">
+        <div>
+          <h2 class="settings-details-heading">Hardware Information</h2>
+          ${aboutField("Model", "Micro-Star International Co., Ltd. MS-7D14")}
+          ${aboutField("Memory", "16.0 GiB")}
+          ${aboutField("Processor", "AMD Ryzen™ 7 5700G with Radeon™ Graphics × 16")}
+          ${aboutField("Graphics", "AMD Radeon™ RX 7800 XT")}
+          ${aboutField("Graphics 1", "AMD Radeon™ Graphics")}
+          ${aboutField("Disk Capacity", "1.5 TB")}
+        </div>
+        <div>
+          <h2 class="settings-details-heading">Software Information</h2>
+          ${aboutField("Firmware Version", "1.G0")}
+          ${aboutField("OS Name", "GNOME OS")}
+          ${aboutField("OS Type", "64-bit")}
+          ${aboutField("GNOME Version", "50")}
+          ${aboutField("Windowing System", "Wayland")}
+          ${aboutField("Kernel Version", "Linux 7.0.0-28-generic")}
+        </div>
+      </div>
+    </div>`;
+}
+
+function openSystemDetailsModal() {
+  const pane = document.querySelector(".settings-content");
+  if (!pane) return;
+  let host = document.getElementById("settings-system-details-host");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "settings-system-details-host";
+    host.className = "settings-system-details-host";
+    pane.appendChild(host);
+  }
+  host.hidden = false;
+  host.innerHTML = `
+    <div class="settings-details-backdrop" data-action="close-system-details"></div>
+    <div class="settings-details-dialog" role="dialog" aria-label="System Details">
+      <header class="settings-details-header">
+        <button type="button" class="settings-btn flat" data-action="copy-system-details">
+          <img class="sym" src="assets/settings/edit-copy-symbolic.svg" alt="" draggable="false" style="width:14px;height:14px;filter:var(--win-sym-filter);margin-right:4px" />
+          Copy
+        </button>
+        <h2 class="settings-details-title">System Details</h2>
+        <button type="button" class="settings-icon-btn" data-action="close-system-details" title="Close" aria-label="Close">
+          <img class="sym" src="assets/status/window-close-symbolic.svg" alt="" draggable="false" />
+        </button>
+      </header>
+      <div class="settings-details-cols">
+        <div>
+          <h3 class="settings-details-heading">Hardware Information</h3>
+          ${aboutField("Model", "Micro-Star International Co., Ltd. MS-7D14")}
+          ${aboutField("Memory", "16.0 GiB")}
+          ${aboutField("Processor", "AMD Ryzen™ 7 5700G with Radeon™ Graphics × 16")}
+          ${aboutField("Graphics", "AMD Radeon™ RX 7800 XT")}
+          ${aboutField("Graphics 1", "AMD Radeon™ Graphics")}
+          ${aboutField("Disk Capacity", "1.5 TB")}
+        </div>
+        <div>
+          <h3 class="settings-details-heading">Software Information</h3>
+          ${aboutField("Firmware Version", "1.G0")}
+          ${aboutField("OS Name", "GNOME OS")}
+          ${aboutField("OS Type", "64-bit")}
+          ${aboutField("GNOME Version", "50")}
+          ${aboutField("Windowing System", "Wayland")}
+          ${aboutField("Kernel Version", "Linux 7.0.0-28-generic")}
+        </div>
+      </div>
+    </div>`;
+  host.querySelectorAll("[data-action]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (btn.dataset.action === "close-system-details") {
+        host.hidden = true;
+        host.innerHTML = "";
+      }
+      if (btn.dataset.action === "copy-system-details") {
+        const text = `Hardware Information
+Model: Micro-Star International Co., Ltd. MS-7D14
+Memory: 16.0 GiB
+Processor: AMD Ryzen™ 7 5700G with Radeon™ Graphics × 16
+Graphics: AMD Radeon™ RX 7800 XT
+Graphics 1: AMD Radeon™ Graphics
+Disk Capacity: 1.5 TB
+
+Software Information
+Firmware Version: 1.G0
+OS Name: GNOME OS
+OS Type: 64-bit
+GNOME Version: 50
+Windowing System: Wayland
+Kernel Version: Linux 7.0.0-28-generic`;
+        navigator.clipboard?.writeText(text).catch(() => {});
+      }
+    });
+  });
+}
+
+function applyReducedMotion(on) {
+  settingsState.reducedMotion = on;
+  document.documentElement.classList.toggle("reduced-motion", on);
+}
+
+function setSettingValue(key, value) {
+  settingsState[key] = value;
+
+  if (key === "darkStyle" && typeof setDarkStyle === "function") {
+    setDarkStyle(value);
+  }
+  if (key === "nightLight" && typeof setNightLight === "function") {
+    setNightLight(value);
+  }
+  if (key === "reducedMotion") applyReducedMotion(value);
+  if (key === "dnd") {
+    const dndBtn = document.querySelector('.qs-toggle[data-toggle="dnd"]');
+    if (dndBtn) {
+      dndBtn.classList.toggle("active", value);
+      dndBtn.setAttribute("aria-pressed", value ? "true" : "false");
+    }
+  }
+  if (key === "volumeOutput" && volumeSlider) {
+    volumeSlider.value = String(value);
+    updateVolumeFill();
+  }
+  if (key === "powerMode") {
+    const pm = document.querySelector('.qs-toggle[data-toggle="power-mode"]');
+    if (pm) {
+      const sub = pm.querySelector(".qs-toggle-sub");
+      const icon = pm.querySelector("img.sym");
+      const labels = {
+        "power-saver": "Power Saver",
+        balanced: "Balanced",
+        performance: "Performance",
+      };
+      if (sub) sub.textContent = labels[value] || value;
+      if (icon) {
+        icon.src =
+          value === "performance"
+            ? "assets/status/power-profile-performance-symbolic.svg"
+            : "assets/status/power-profile-balanced-symbolic.svg";
+      }
+      const isPerf = value === "performance";
+      pm.classList.toggle("active", isPerf || value === "balanced" || value === "power-saver");
+    }
+  }
+  if (
+    key === "wifiEnabled" ||
+    key === "bluetoothEnabled" ||
+    key === "autoSuspend" ||
+    key === "screenTimeLimit" ||
+    key === "movementReminders" ||
+    key === "eyesightReminders" ||
+    key === "dynamicWorkspaces"
+  ) {
+    renderSettingsContent();
+  }
+}
+
+function bindSettingsContentHandlers() {
+  settingsContent.querySelectorAll(".settings-switch").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const key = btn.dataset.setting;
+      if (!key) return;
+      const next = !btn.classList.contains("on");
+      btn.classList.toggle("on", next);
+      btn.setAttribute("aria-checked", next ? "true" : "false");
+      // Map string keys that aren't in settingsState as soft toggles
+      if (
+        key in settingsState ||
+        [
+          "startupSound",
+          "screenReader",
+          "soundKeys",
+          "alwaysScrollbars",
+          "searchFiles",
+          "searchCalc",
+          "searchWeb",
+          "searchChars",
+          "rdpShare",
+          "rdpLogin",
+          "wiredEnabled",
+          "adjustForTv",
+        ].includes(key)
+      ) {
+        if (!(key in settingsState)) settingsState[key] = next;
+        setSettingValue(key, next);
+      }
+    });
+  });
+
+  settingsContent.querySelectorAll("[data-radio]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const key = btn.dataset.radio;
+      let value = btn.dataset.value;
+      if (value === "true") value = true;
+      else if (value === "false") value = false;
+      setSettingValue(key, value);
+      renderSettingsContent();
+    });
+  });
+
+  settingsContent.querySelectorAll("[data-nav]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.nav;
+      if (id === "system-details") {
+        openSystemDetailsModal();
+        return;
+      }
+      const titles = {
+        "night-light": "Night Light",
+        datetime: "Date & Time",
+        region: "Region & Language",
+        users: "Users",
+        "remote-desktop": "Remote Desktop",
+        ssh: "Secure Shell",
+        about: "About",
+        "system-details": "System Details",
+        "ua-seeing": "Seeing",
+        "ua-hearing": "Hearing",
+        "ua-typing": "Typing",
+        "ua-pointing": "Pointing and Clicking",
+        "ua-zoom": "Zoom",
+        "screen-lock": "Screen Lock",
+        location: "Location",
+        usage: "File History & Trash",
+        telemetry: "Diagnostics",
+        cameras: "Cameras",
+        thunderbolt: "Thunderbolt",
+        "device-security": "Device Security",
+        "default-apps": "Default Apps",
+        "removable-media": "Removable Media",
+        "search-locations": "Search Locations",
+        proxy: "Proxy",
+        shortcuts: "Keyboard Shortcuts",
+      };
+      settingsSubpage = { id, title: titles[id] || id };
+      renderSettingsContent();
+    });
+  });
+
+  settingsContent.querySelectorAll("[data-style]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setSettingValue("darkStyle", btn.dataset.style === "dark");
+      renderSettingsContent();
+    });
+  });
+
+  settingsContent.querySelectorAll("[data-accent]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      flashAccentPreview(btn.dataset.accent);
+    });
+  });
+
+  settingsContent.querySelectorAll("[data-wall]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      applyWallpaper(btn.dataset.wall);
+      settingsContent
+        .querySelectorAll("[data-wall]")
+        .forEach((b) => b.classList.remove("selected"));
+      btn.classList.add("selected");
+      // Keep style previews in sync with the active wallpaper
+      const url = SETTINGS_WALLPAPERS[btn.dataset.wall]?.webp;
+      if (url) {
+        settingsContent.querySelectorAll(".settings-style-preview").forEach((el) => {
+          el.style.backgroundImage = `url('${url}')`;
+        });
+      }
+    });
+  });
+
+  const paintRange = (input) => {
+    const min = Number(input.min) || 0;
+    const max = Number(input.max) || 100;
+    const val = Number(input.value);
+    const pct = ((val - min) / (max - min)) * 100;
+    input.style.setProperty("--range-fill", `${pct}%`);
+  };
+
+  settingsContent.querySelectorAll("[data-slider]").forEach((input) => {
+    paintRange(input);
+    input.addEventListener("input", (e) => {
+      e.stopPropagation();
+      const key = input.dataset.slider;
+      const val = Number(input.value);
+      paintRange(input);
+      if (key === "textSize") {
+        settingsState.textSize = val;
+        const sample = settingsContent.querySelector(".settings-text-preview-sample");
+        if (sample) sample.style.fontSize = `${[14, 15, 17][val] || 15}px`;
+        return;
+      }
+      setSettingValue(key, val);
+      const label = settingsContent.querySelector(`[data-slider-label="${key}"]`);
+      if (label) label.textContent = `${val}%`;
+    });
+  });
+
+  settingsContent.querySelectorAll("[data-primary]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      settingsState.primaryButton = btn.dataset.primary;
+      renderSettingsContent();
+    });
+  });
+
+  settingsContent.querySelectorAll("[data-first-day]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      settingsState.firstDayOfWeek = btn.dataset.firstDay;
+      renderSettingsContent();
+    });
+  });
+
+  settingsContent.querySelectorAll("[data-action]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (btn.dataset.action === "enable-wifi") {
+        setSettingValue("wifiEnabled", true);
+      }
+      if (btn.dataset.action === "enable-bt") {
+        setSettingValue("bluetoothEnabled", true);
+      }
+      if (btn.dataset.action === "ws-inc") {
+        settingsState.workspaceCount = Math.min(36, (settingsState.workspaceCount || 4) + 1);
+        renderSettingsContent();
+      }
+      if (btn.dataset.action === "ws-dec") {
+        settingsState.workspaceCount = Math.max(1, (settingsState.workspaceCount || 4) - 1);
+        renderSettingsContent();
+      }
+      if (btn.dataset.action === "copy-device-name") {
+        navigator.clipboard?.writeText(settingsState.deviceName).catch(() => {});
+      }
+    });
+  });
+}
+
+// Settings chrome controls
+settingsCloseBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  closeSettings();
+});
+
+settingsBackBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  settingsSubpage = null;
+  renderSettingsContent();
+});
+
+settingsSearchBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  setSettingsSearchOpen(!settingsSearchOpen);
+});
+
+settingsSearchInput?.addEventListener("input", () => {
+  settingsSearchQuery = settingsSearchInput.value;
+  renderSettingsSidebar();
+});
+
+settingsSearchInput?.addEventListener("click", (e) => e.stopPropagation());
+
+settingsMenuBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (!settingsMenu) return;
+  settingsMenu.hidden = !settingsMenu.hidden;
+});
+
+settingsMenu?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const item = e.target.closest(".settings-menu-item");
+  if (!item) return;
+  settingsMenu.hidden = true;
+  if (item.dataset.action === "about") {
+    settingsPanelId = "system";
+    settingsSubpage = { id: "about", title: "About" };
+    renderSettingsSidebar();
+    renderSettingsContent();
+  }
+});
+
+settingsWindow?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  // close menu when clicking elsewhere in window
+  if (settingsMenu && !settingsMenu.hidden && !e.target.closest("#settings-menu-btn") && !e.target.closest("#settings-menu")) {
+    settingsMenu.hidden = true;
+  }
+});
+
+qsSettingsBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  openSettings();
+});
 
 /* Boot workspace layer (must run after DOM + nautilus node exist) */
 initWorkspaces();

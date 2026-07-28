@@ -103,7 +103,7 @@
           <button type="button" class="qs-round-btn" title="Screenshot" aria-label="Screenshot">
             <img class="sym" src="assets/status/screenshooter-symbolic.svg" alt="" draggable="false" />
           </button>
-          <button type="button" class="qs-round-btn" title="Settings" aria-label="Settings">
+          <button type="button" class="qs-round-btn" id="qs-settings-btn" title="Settings" aria-label="Settings">
             <img class="sym" src="assets/status/cog-wheel-symbolic.svg" alt="" draggable="false" />
           </button>
         </div>
@@ -306,7 +306,7 @@
           <span class="dock-tooltip">Files</span>
           <span class="running-dot" aria-hidden="true"></span>
         </button>
-        
+
         <button type="button" class="dock-item" data-app="brave" title="Brave">
           <img src="assets/Brave.png" alt="" draggable="false" />
           <span class="dock-tooltip">Brave</span>
@@ -382,6 +382,60 @@
             <!-- Items filled by JS -->
           </div>
         </div>
+      </div>
+    </div>
+
+    <!--
+      GNOME Settings 50 (gnome-control-center) — AdwNavigationSplitView shell.
+      Sidebar order matches upstream panel_order[] in cc-panel-list.c.
+      Content panels filled by JS (libadwaita PreferencesPage style).
+    -->
+    <div class="settings-window" id="settings-window" role="dialog" aria-label="Settings" hidden data-workspace="0">
+      <div class="settings-split">
+        <aside class="settings-sidebar" aria-label="Settings categories">
+          <header class="settings-sidebar-header">
+            <button type="button" class="settings-icon-btn" id="settings-search-btn" title="Search" aria-label="Search" aria-pressed="false">
+              <img class="sym" src="assets/settings/edit-find-symbolic.svg" alt="" draggable="false" />
+            </button>
+            <span class="settings-sidebar-title">Settings</span>
+            <button type="button" class="settings-icon-btn" id="settings-menu-btn" title="Main Menu" aria-label="Main Menu" aria-haspopup="true">
+              <img class="sym" src="assets/settings/open-menu-symbolic.svg" alt="" draggable="false" />
+            </button>
+          </header>
+
+          <div class="settings-search-bar" id="settings-search-bar" hidden>
+            <img class="sym" src="assets/settings/edit-find-symbolic.svg" alt="" draggable="false" />
+            <input type="search" class="settings-search-input" id="settings-search-input" placeholder="Search settings" autocomplete="off" spellcheck="false" />
+          </div>
+
+          <nav class="settings-panel-list" id="settings-panel-list" role="listbox" aria-label="Settings categories">
+            <!-- Filled by JS -->
+          </nav>
+
+          <div class="settings-menu" id="settings-menu" role="menu" hidden>
+            <button type="button" class="settings-menu-item" role="menuitem" data-action="shortcuts">Keyboard Shortcuts</button>
+            <button type="button" class="settings-menu-item" role="menuitem" data-action="help">Help</button>
+            <button type="button" class="settings-menu-item" role="menuitem" data-action="about">About Settings</button>
+          </div>
+        </aside>
+
+        <section class="settings-content" aria-label="Panel">
+          <header class="settings-content-header">
+            <button type="button" class="settings-icon-btn settings-back-btn" id="settings-back-btn" title="Back" aria-label="Back" hidden>
+              <img class="sym" src="assets/actions/go-previous-symbolic.svg" alt="" draggable="false" />
+            </button>
+            <h1 class="settings-panel-title" id="settings-panel-title">Network</h1>
+            <div class="settings-header-end">
+              <div class="settings-header-actions" id="settings-header-actions"></div>
+              <button type="button" class="settings-icon-btn" id="settings-close" title="Close" aria-label="Close">
+                <img class="sym" src="assets/status/window-close-symbolic.svg" alt="" draggable="false" />
+              </button>
+            </div>
+          </header>
+          <div class="settings-content-scroll" id="settings-content">
+            <!-- Panel content filled by JS -->
+          </div>
+        </section>
       </div>
     </div>
   </div>
