@@ -438,6 +438,97 @@
         </section>
       </div>
     </div>
+
+    <!--
+      GNOME Software 50 — app store with Flathub catalog.
+      Layout mirrors gs-shell.ui / gs-overview-page.ui / gs-details-page.ui:
+      header switcher (Explore · Installed · Updates), featured carousel,
+      category tiles, summary tiles, app details with Install progress.
+    -->
+    <div class="software-window" id="software-window" role="dialog" aria-label="App Center" hidden data-workspace="0">
+      <!-- Main shell (Explore / Installed / Updates / Search) -->
+      <div class="sw-shell" id="sw-shell">
+        <header class="sw-header">
+          <button type="button" class="sw-icon-btn" id="sw-search-btn" title="Search" aria-label="Search" aria-pressed="false">
+            <img class="sym" src="assets/actions/search-symbolic.svg" alt="" draggable="false" />
+          </button>
+
+          <nav class="sw-switcher" id="sw-switcher" role="tablist" aria-label="App Center sections">
+            <button type="button" class="sw-switcher-btn active" role="tab" aria-selected="true" data-sw-tab="explore">
+              <img class="sym" src="assets/software/software-explore-symbolic.svg" alt="" draggable="false" />
+              <span>Explore</span>
+            </button>
+            <button type="button" class="sw-switcher-btn" role="tab" aria-selected="false" data-sw-tab="installed">
+              <img class="sym" src="assets/software/software-installed-symbolic.svg" alt="" draggable="false" />
+              <span>Installed</span>
+            </button>
+            <button type="button" class="sw-switcher-btn" role="tab" aria-selected="false" data-sw-tab="updates">
+              <img class="sym" src="assets/software/software-updates-symbolic.svg" alt="" draggable="false" />
+              <span>Updates</span>
+            </button>
+          </nav>
+
+          <div class="sw-header-end">
+            <button type="button" class="sw-icon-btn" id="sw-menu-btn" title="Main Menu" aria-label="Main Menu" aria-haspopup="true">
+              <img class="sym" src="assets/settings/open-menu-symbolic.svg" alt="" draggable="false" />
+            </button>
+            <button type="button" class="sw-icon-btn" id="sw-close" title="Close" aria-label="Close">
+              <img class="sym" src="assets/status/window-close-symbolic.svg" alt="" draggable="false" />
+            </button>
+          </div>
+        </header>
+
+        <div class="sw-search-bar" id="sw-search-bar" hidden>
+          <img class="sym" src="assets/actions/search-symbolic.svg" alt="" draggable="false" />
+          <input type="search" class="sw-search-input" id="sw-search-input" placeholder="Search apps" autocomplete="off" spellcheck="false" />
+        </div>
+
+        <div class="sw-menu" id="sw-menu" role="menu" hidden>
+          <button type="button" class="sw-menu-item" role="menuitem" data-sw-action="repos">Software Repositories</button>
+          <button type="button" class="sw-menu-item" role="menuitem" data-sw-action="about">About App Center</button>
+        </div>
+
+        <div class="sw-body" id="sw-body">
+          <!-- Filled by JS: explore / installed / updates / search -->
+        </div>
+      </div>
+
+      <!-- App details (leaflet page) -->
+      <div class="sw-details" id="sw-details" hidden>
+        <header class="sw-header sw-details-header">
+          <button type="button" class="sw-icon-btn" id="sw-details-back" title="Go back" aria-label="Go back">
+            <img class="sym" src="assets/actions/go-previous-symbolic.svg" alt="" draggable="false" />
+          </button>
+          <span class="sw-details-title" id="sw-details-title"></span>
+          <div class="sw-header-end">
+            <button type="button" class="sw-icon-btn" id="sw-details-close" title="Close" aria-label="Close">
+              <img class="sym" src="assets/status/window-close-symbolic.svg" alt="" draggable="false" />
+            </button>
+          </div>
+        </header>
+        <div class="sw-details-scroll" id="sw-details-body">
+          <!-- Filled by JS -->
+        </div>
+      </div>
+
+      <!-- Category browse page -->
+      <div class="sw-category" id="sw-category" hidden>
+        <header class="sw-header sw-details-header">
+          <button type="button" class="sw-icon-btn" id="sw-category-back" title="Go back" aria-label="Go back">
+            <img class="sym" src="assets/actions/go-previous-symbolic.svg" alt="" draggable="false" />
+          </button>
+          <span class="sw-details-title" id="sw-category-title">Category</span>
+          <div class="sw-header-end">
+            <button type="button" class="sw-icon-btn" id="sw-category-close" title="Close" aria-label="Close">
+              <img class="sym" src="assets/status/window-close-symbolic.svg" alt="" draggable="false" />
+            </button>
+          </div>
+        </header>
+        <div class="sw-details-scroll" id="sw-category-body">
+          <!-- Filled by JS -->
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>

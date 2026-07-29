@@ -5,6 +5,11 @@
 
 const APPS = [
   {
+    id: "software",
+    name: "App Center",
+    icon: "assets/apps/org.gnome.Software.png",
+  },
+  {
     id: "contacts",
     name: "Address Book",
     icon: "assets/apps/org.gnome.Contacts.png",
@@ -99,6 +104,8 @@ let switchAnimTimer = 0;
 let nautilusWorkspace = 0;
 /** Workspace index that currently hosts Settings (if open). */
 let settingsWorkspace = 0;
+/** Workspace index that currently hosts Software (if open). */
+let softwareWorkspace = 0;
 
 const workspacePanes = () =>
   workspaceTrack
@@ -284,6 +291,13 @@ function placeSettingsOnWorkspace() {
   );
 }
 
+function placeSoftwareOnWorkspace() {
+  placeWindowOnWorkspace(
+    document.getElementById("software-window"),
+    softwareWorkspace
+  );
+}
+
 /**
  * Switch workspace. Outside overview: 250ms horizontal slide.
  * Inside overview: update active only (all panes already visible).
@@ -385,6 +399,7 @@ function handleWorkspaceScroll(deltaY, deltaX = 0) {
 function initWorkspaces() {
   placeNautilusOnWorkspace();
   placeSettingsOnWorkspace();
+  placeSoftwareOnWorkspace();
   workspaceProgress = activeWorkspace;
   updateWorkspaceChrome(activeWorkspace);
   applyWorkspaceGeometry({ mode: "desktop", progress: activeWorkspace, animate: false });
@@ -621,6 +636,10 @@ function renderApps(filter = "") {
     btn.addEventListener("click", () => {
       btn.classList.add("pressed");
       setTimeout(() => btn.classList.remove("pressed"), 150);
+      if (app.id === "software") {
+        closeAppMenu({ activate: true });
+        openSoftware();
+      }
     });
     appGrid.appendChild(btn);
   }
@@ -1038,6 +1057,18 @@ document.addEventListener("keydown", (e) => {
       closeSettings();
       return;
     }
+    if (softwareWindow && !softwareWindow.hidden) {
+      if (softwareSearchOpen) {
+        setSoftwareSearchOpen(false);
+        return;
+      }
+      if (softwareView === "details" || softwareView === "category") {
+        softwareShowMain();
+        return;
+      }
+      closeSoftware();
+      return;
+    }
     if (nauSearchOpen) {
       setNautilusSearchOpen(false);
       return;
@@ -1072,12 +1103,26 @@ document.addEventListener("keydown", (e) => {
     return;
   }
 
+  // Ctrl+F in Software → search
+  if (
+    (e.ctrlKey || e.metaKey) &&
+    e.key.toLowerCase() === "f" &&
+    softwareWindow &&
+    !softwareWindow.hidden &&
+    softwareView === "main"
+  ) {
+    e.preventDefault();
+    setSoftwareSearchOpen(true);
+    return;
+  }
+
   // Type-to-search when overview closed: open it
   if (
     !overviewOpen &&
     appMenu.hidden &&
     nautilusWindow.hidden &&
     (!settingsWindow || settingsWindow.hidden) &&
+    (!softwareWindow || softwareWindow.hidden) &&
     e.key.length === 1 &&
     !e.ctrlKey &&
     !e.metaKey &&
@@ -1772,6 +1817,7 @@ nauClose.addEventListener("click", (e) => {
 });
 
 nautilusWindow.addEventListener("click", (e) => {
+  if (overviewOpen || overviewAnimating) return;
   e.stopPropagation();
 });
 
@@ -4148,6 +4194,7 @@ settingsMenu?.addEventListener("click", (e) => {
 });
 
 settingsWindow?.addEventListener("click", (e) => {
+  if (overviewOpen || overviewAnimating) return;
   e.stopPropagation();
   // close menu when clicking elsewhere in window
   if (settingsMenu && !settingsMenu.hidden && !e.target.closest("#settings-menu-btn") && !e.target.closest("#settings-menu")) {
@@ -4158,6 +4205,1611 @@ settingsWindow?.addEventListener("click", (e) => {
 qsSettingsBtn?.addEventListener("click", (e) => {
   e.stopPropagation();
   openSettings();
+});
+
+
+/* ============================================================
+   GNOME Software 50 — Flathub app store preview
+   UI based on gs-shell.ui / gs-overview-page.ui / gs-details-page.ui
+   Catalog metadata sourced from Flathub (popular apps, 2025–2026)
+   ============================================================ */
+
+const softwareWindow = document.getElementById("software-window");
+const swShell = document.getElementById("sw-shell");
+const swBody = document.getElementById("sw-body");
+const swDetails = document.getElementById("sw-details");
+const swDetailsBody = document.getElementById("sw-details-body");
+const swCategory = document.getElementById("sw-category");
+const swCategoryBody = document.getElementById("sw-category-body");
+const swCategoryTitle = document.getElementById("sw-category-title");
+const swSearchBar = document.getElementById("sw-search-bar");
+const swSearchInput = document.getElementById("sw-search-input");
+const swSearchBtn = document.getElementById("sw-search-btn");
+const swMenu = document.getElementById("sw-menu");
+const swMenuBtn = document.getElementById("sw-menu-btn");
+const swCloseBtn = document.getElementById("sw-close");
+const swDetailsBack = document.getElementById("sw-details-back");
+const swDetailsClose = document.getElementById("sw-details-close");
+const swCategoryBack = document.getElementById("sw-category-back");
+const swCategoryClose = document.getElementById("sw-category-close");
+
+
+/** @type {"main"|"details"|"category"} */
+let softwareView = "main";
+/** @type {"explore"|"installed"|"updates"|"search"} */
+let softwareTab = "explore";
+let softwareSearchOpen = false;
+let softwareSearchQuery = "";
+/** Currently open app id on details page */
+let softwareDetailsId = null;
+/** Category id when browsing a category */
+let softwareCategoryId = null;
+/** Featured carousel index */
+let softwareCarouselIndex = 0;
+let softwareCarouselTimer = 0;
+/** Active install simulations: id -> { timer, progress, phase } */
+const softwareInstallJobs = new Map();
+
+const SW_STORAGE_KEY = "gnome-preview-software-installed";
+
+/**
+ * Flatpak IDs already present on this preview desktop (dock / overview).
+ * Shown as installed in Software; never cloned into the app grid.
+ */
+const SW_DESKTOP_PREINSTALLED = {
+  "com.valvesoftware.Steam": true, // dock
+  "com.brave.Browser": true, // dock
+  "org.libreoffice.LibreOffice": true, // overview suite components
+};
+
+/**
+ * Flathub catalog — popular apps with metadata from flathub.org API.
+ * downloadSizeMB is approximate download size shown in Software's context bar.
+ * brand is a hex used for screenshot placeholders.
+ */
+const FLATHUB_APPS = [
+  {
+    id: "org.mozilla.firefox",
+    name: "Firefox",
+    summary: "Fast, Private & Safe Web Browser",
+    description:
+      "When it comes to your life online, you have a choice: accept the factory settings or put your privacy first. When you choose Firefox as your default browser, you're choosing to protect your data while supporting an independent tech company. Firefox is also the only major browser backed by a non-profit fighting to give you more openness, transparency and control of your life online.",
+    developer: "Mozilla",
+    verified: true,
+    free: true,
+    license: "MPL-2.0",
+    version: "153.0.1",
+    categories: ["network", "create"],
+    icon: "assets/flathub/org.mozilla.firefox.png",
+    downloadSizeMB: 248,
+    installedSizeMB: 312,
+    safety: { title: "Safe", desc: "Auditable code, sandbox, few permissions", level: "ok" },
+    age: "3+",
+    brand: "#ff7139",
+    featured: true,
+    editors: true,
+  },
+  {
+    id: "com.discordapp.Discord",
+    name: "Discord",
+    summary: "Talk, play, hang out",
+    description:
+      "Discord is a free all-in-one messaging, voice, and video client available on your computer and phone. Whether you're part of a school club, gaming group, worldwide art community, or just a handful of friends that want to spend time together, Discord makes it easy to talk every day.",
+    developer: "Discord Inc.",
+    verified: true,
+    free: false,
+    license: "Proprietary",
+    version: "1.0.151",
+    categories: ["socialize", "network"],
+    icon: "assets/flathub/com.discordapp.Discord.png",
+    downloadSizeMB: 172,
+    installedSizeMB: 265,
+    safety: { title: "Potentially Unsafe", desc: "Proprietary, network access, broad permissions", level: "warn" },
+    age: "13+",
+    brand: "#5865f2",
+    popular: true,
+  },
+  {
+    id: "com.google.Chrome",
+    name: "Google Chrome",
+    summary: "The browser built to be yours",
+    description:
+      "Google Chrome is a browser that combines a minimal design with sophisticated technology to make the web faster, safer, and easier.",
+    developer: "Google",
+    verified: false,
+    free: false,
+    license: "Proprietary",
+    version: "150.0.7871.186",
+    categories: ["network"],
+    icon: "assets/flathub/com.google.Chrome.png",
+    downloadSizeMB: 285,
+    installedSizeMB: 380,
+    safety: { title: "Potentially Unsafe", desc: "Proprietary, network access, broad permissions", level: "warn" },
+    age: "3+",
+    brand: "#4285f4",
+    popular: true,
+  },
+  {
+    id: "com.brave.Browser",
+    name: "Brave",
+    summary: "Fast Internet, AI, Adblock",
+    description:
+      "Brave is on a mission to fix the web by giving users a safer, faster and better browsing experience while growing support for content creators through a new attention-based ecosystem of rewards. Browse faster by blocking ads and trackers that violate your privacy and slow you down.",
+    developer: "Brave Software",
+    verified: true,
+    free: true,
+    license: "MPL-2.0",
+    version: "1.92.144",
+    categories: ["network"],
+    icon: "assets/flathub/com.brave.Browser.png",
+    downloadSizeMB: 210,
+    installedSizeMB: 290,
+    safety: { title: "Safe", desc: "Open source core, sandbox, ad & tracker blocking", level: "ok" },
+    age: "3+",
+    brand: "#fb542b",
+    popular: true,
+  },
+  {
+    id: "com.usebottles.bottles",
+    name: "Bottles",
+    summary: "Run Windows software",
+    description:
+      "Bottles lets you run Windows software on Linux, such as applications and games. It introduces a workflow that helps you organize by categorizing each software to your liking. Bottles provides several tools and integrations to help you manage and optimize your applications.",
+    developer: "The Bottles Contributors",
+    verified: true,
+    free: true,
+    license: "GPL-3.0-only",
+    version: "64.1",
+    categories: ["play", "create", "work"],
+    icon: "assets/flathub/com.usebottles.bottles.png",
+    downloadSizeMB: 95,
+    installedSizeMB: 140,
+    safety: { title: "Safe", desc: "Auditable, sandbox, needs filesystem access for bottles", level: "ok" },
+    age: "3+",
+    brand: "#9281ff",
+    featured: true,
+    popular: true,
+  },
+  {
+    id: "org.videolan.VLC",
+    name: "VLC",
+    summary: "VLC media player, the open-source multimedia player",
+    description:
+      "VLC is a free and open source cross-platform multimedia player and framework that plays most multimedia files as well as DVDs, Audio CDs, VCDs, and various streaming protocols.",
+    developer: "VideoLAN et al.",
+    verified: false,
+    free: true,
+    license: "GPL-2.0+",
+    version: "3.0.23",
+    categories: ["play", "create"],
+    icon: "assets/flathub/org.videolan.VLC.png",
+    downloadSizeMB: 118,
+    installedSizeMB: 165,
+    safety: { title: "Safe", desc: "Auditable, sandbox, media device access", level: "ok" },
+    age: "3+",
+    brand: "#ff8800",
+    popular: true,
+    editors: true,
+  },
+  {
+    id: "com.spotify.Client",
+    name: "Spotify",
+    summary: "Online music streaming service",
+    description:
+      "Access all of your favorite music, discover new songs, and share music online with your friends — all in one place. Create shared playlists or share individual songs with just a click of a button.",
+    developer: "Spotify",
+    verified: false,
+    free: false,
+    license: "Proprietary",
+    version: "1.2.92",
+    categories: ["play", "socialize"],
+    icon: "assets/flathub/com.spotify.Client.png",
+    downloadSizeMB: 155,
+    installedSizeMB: 220,
+    safety: { title: "Potentially Unsafe", desc: "Proprietary, network access, audio playback", level: "warn" },
+    age: "3+",
+    brand: "#1db954",
+    popular: true,
+  },
+  {
+    id: "com.valvesoftware.Steam",
+    name: "Steam",
+    summary: "Launcher for the Steam software distribution service",
+    description:
+      "Note: This is a community package of the Steam gaming platform not officially supported by Valve. Steam is a software distribution service with an online store, automated installation, automatic updates, achievements, Steam Cloud synchronized savegames and screenshot functionality.",
+    developer: "Valve Corporation",
+    verified: false,
+    free: false,
+    license: "Proprietary",
+    version: "1.0.0.85",
+    categories: ["play"],
+    icon: "assets/flathub/com.valvesoftware.Steam.png",
+    downloadSizeMB: 12,
+    installedSizeMB: 18,
+    safety: { title: "Potentially Unsafe", desc: "Proprietary, broad system and network access", level: "warn" },
+    age: "13+",
+    brand: "#1b2838",
+    popular: true,
+  },
+  {
+    id: "com.heroicgameslauncher.hgl",
+    name: "Heroic",
+    summary: "Play Epic, GOG and Amazon Games",
+    description:
+      "Heroic is an Open Source Games Launcher. Right now it supports launching games from the Epic Games Store using Legendary, GOG Games using a custom implementation with gogdl, and Amazon Games using Nile.",
+    developer: "Heroic Games Launcher",
+    verified: true,
+    free: true,
+    license: "GPL-3.0",
+    version: "2.22.0",
+    categories: ["play"],
+    icon: "assets/flathub/com.heroicgameslauncher.hgl.png",
+    downloadSizeMB: 185,
+    installedSizeMB: 240,
+    safety: { title: "Safe", desc: "Auditable, sandbox, needs filesystem for games", level: "ok" },
+    age: "13+",
+    brand: "#0e0e10",
+    popular: true,
+  },
+  {
+    id: "com.github.tchx84.Flatseal",
+    name: "Flatseal",
+    summary: "Manage Flatpak permissions",
+    description:
+      "Flatseal is a graphical utility to review and modify permissions from your Flatpak applications.",
+    developer: "Martin Abente Lahaye",
+    verified: true,
+    free: true,
+    license: "GPL-3.0-or-later",
+    version: "2.4.1",
+    categories: ["work", "develop"],
+    icon: "assets/flathub/com.github.tchx84.Flatseal.png",
+    downloadSizeMB: 8,
+    installedSizeMB: 14,
+    safety: { title: "Safe", desc: "Auditable, manages sandbox permissions only", level: "ok" },
+    age: "3+",
+    brand: "#62a0ea",
+    editors: true,
+  },
+  {
+    id: "com.obsproject.Studio",
+    name: "OBS Studio",
+    summary: "Live stream and record videos",
+    description:
+      "Free and open source software for video capturing, recording, and live streaming. High performance real-time video/audio capturing and mixing. Create scenes made up of multiple sources including window captures, images, text, browser windows, webcams, capture cards and more.",
+    developer: "OBS Project",
+    verified: true,
+    free: true,
+    license: "GPL-2.0-or-later",
+    version: "32.2.1",
+    categories: ["create", "play"],
+    icon: "assets/flathub/com.obsproject.Studio.png",
+    downloadSizeMB: 310,
+    installedSizeMB: 480,
+    safety: { title: "Safe", desc: "Auditable, needs camera, mic and desktop capture", level: "ok" },
+    age: "3+",
+    brand: "#302e31",
+    featured: true,
+    popular: true,
+    editors: true,
+  },
+  {
+    id: "org.telegram.desktop",
+    name: "Telegram",
+    summary: "New era of messaging",
+    description:
+      "Pure instant messaging — simple, fast, secure, and synced across all your devices. One of the world's top 10 most downloaded apps with over 500 million active users.",
+    developer: "Telegram FZ-LLC",
+    verified: true,
+    free: true,
+    license: "GPL-3.0",
+    version: "7.0.6",
+    categories: ["socialize", "network"],
+    icon: "assets/flathub/org.telegram.desktop.png",
+    downloadSizeMB: 95,
+    installedSizeMB: 140,
+    safety: { title: "Safe", desc: "Auditable client, network access, notifications", level: "ok" },
+    age: "13+",
+    brand: "#2aabee",
+    popular: true,
+  },
+  {
+    id: "org.gimp.GIMP",
+    name: "GNU Image Manipulation Program",
+    summary: "High-end image creation and manipulation",
+    description:
+      "GIMP is an acronym for GNU Image Manipulation Program. It is community-driven Free Software for high-end image creation and manipulation. It can be used as a paint program, an expert quality photo retouching program, an image format converter, and more.",
+    developer: "The GIMP team",
+    verified: true,
+    free: true,
+    license: "GPL-3.0+ AND LGPL-3.0+",
+    version: "3.2.4",
+    categories: ["create"],
+    icon: "assets/flathub/org.gimp.GIMP.png",
+    downloadSizeMB: 185,
+    installedSizeMB: 320,
+    safety: { title: "Safe", desc: "Auditable, sandbox, filesystem access for images", level: "ok" },
+    age: "3+",
+    brand: "#5c554b",
+    featured: true,
+    editors: true,
+  },
+  {
+    id: "com.vscodium.codium",
+    name: "VSCodium",
+    summary: "Telemetry-less code editing",
+    description:
+      "VSCodium combines the simplicity of a code editor with what developers need for the core edit-build-debug cycle. This is the telemetry-less version of Visual Studio Code, packaged into a Flatpak. This repackaging is not supported by Microsoft.",
+    developer: "The VSCodium team",
+    verified: true,
+    free: true,
+    license: "MIT",
+    version: "1.121.03429",
+    categories: ["develop", "work"],
+    icon: "assets/flathub/com.vscodium.codium.png",
+    downloadSizeMB: 190,
+    installedSizeMB: 330,
+    safety: { title: "Safe", desc: "Auditable, no telemetry, sandbox", level: "ok" },
+    age: "3+",
+    brand: "#144d92",
+    popular: true,
+    editors: true,
+  },
+  {
+    id: "md.obsidian.Obsidian",
+    name: "Obsidian",
+    summary: "Markdown-based knowledge base",
+    description:
+      "Obsidian is a powerful knowledge base that works on top of a local folder of plain text Markdown files. Making and following connections is frictionless, and you can explore all of your knowledge in the interactive graph view.",
+    developer: "Obsidian",
+    verified: true,
+    free: false,
+    license: "Proprietary",
+    version: "1.12.7",
+    categories: ["work", "learn"],
+    icon: "assets/flathub/md.obsidian.Obsidian.png",
+    downloadSizeMB: 145,
+    installedSizeMB: 210,
+    safety: { title: "Potentially Unsafe", desc: "Proprietary, local vault filesystem access", level: "warn" },
+    age: "3+",
+    brand: "#7c3aed",
+    popular: true,
+  },
+  {
+    id: "org.blender.Blender",
+    name: "Blender",
+    summary: "Free and open source 3D creation suite",
+    description:
+      "Blender is the free and open source 3D creation suite. It supports the entirety of the 3D pipeline — modeling, rigging, animation, simulation, rendering, compositing, motion tracking, and video editing.",
+    developer: "Blender Foundation",
+    verified: false,
+    free: true,
+    license: "GPL-3.0",
+    version: "5.2",
+    categories: ["create"],
+    icon: "assets/flathub/org.blender.Blender.png",
+    downloadSizeMB: 420,
+    installedSizeMB: 980,
+    safety: { title: "Safe", desc: "Auditable, sandbox, GPU and filesystem access", level: "ok" },
+    age: "3+",
+    brand: "#e87d0d",
+    featured: true,
+    editors: true,
+  },
+  {
+    id: "org.inkscape.Inkscape",
+    name: "Inkscape",
+    summary: "Vector Graphics Editor",
+    description:
+      "A free and open source vector graphics editor. It offers a rich set of features and is widely used for both artistic and technical illustrations such as cartoons, clip art, logos, typography, diagramming and flowcharting.",
+    developer: "The Inkscape Community",
+    verified: true,
+    free: true,
+    license: "GPL-2.0-or-later",
+    version: "1.4.4",
+    categories: ["create"],
+    icon: "assets/flathub/org.inkscape.Inkscape.png",
+    downloadSizeMB: 165,
+    installedSizeMB: 280,
+    safety: { title: "Safe", desc: "Auditable, sandbox, filesystem access", level: "ok" },
+    age: "3+",
+    brand: "#000000",
+    editors: true,
+  },
+  {
+    id: "org.kde.krita",
+    name: "Krita",
+    summary: "Digital Painting, Creative Freedom",
+    description:
+      "Krita is the full-featured digital art studio. It is perfect for sketching and painting, and presents an end-to-end solution for creating digital painting files from scratch.",
+    developer: "Krita Foundation",
+    verified: true,
+    free: true,
+    license: "GPL-3.0-only",
+    version: "5.3.2",
+    categories: ["create"],
+    icon: "assets/flathub/org.kde.krita.png",
+    downloadSizeMB: 220,
+    installedSizeMB: 390,
+    safety: { title: "Safe", desc: "Auditable, sandbox, tablet and filesystem access", level: "ok" },
+    age: "3+",
+    brand: "#3daee9",
+    editors: true,
+  },
+  {
+    id: "org.signal.Signal",
+    name: "Signal Desktop",
+    summary: "Private messenger",
+    description:
+      "To use the Signal desktop app, Signal must first be installed on your phone. Millions of people use Signal every day for free and instantaneous communication anywhere in the world. Send and receive high-fidelity messages, participate in HD voice/video calls, and explore a growing set of new features that help you stay connected.",
+    developer: "Signal Foundation",
+    verified: false,
+    free: true,
+    license: "AGPL-3.0-only",
+    version: "8.20.0",
+    categories: ["socialize", "network"],
+    icon: "assets/flathub/org.signal.Signal.png",
+    downloadSizeMB: 175,
+    installedSizeMB: 250,
+    safety: { title: "Safe", desc: "Auditable, e2e encryption, network access", level: "ok" },
+    age: "13+",
+    brand: "#3a76f0",
+  },
+  {
+    id: "com.slack.Slack",
+    name: "Slack",
+    summary: "Business communication",
+    description:
+      "Slack brings team communication and collaboration into one place so you can get more work done, whether you belong to a large enterprise or a small business.",
+    developer: "Slack Technologies Inc.",
+    verified: false,
+    free: false,
+    license: "Proprietary",
+    version: "4.51.180",
+    categories: ["work", "socialize"],
+    icon: "assets/flathub/com.slack.Slack.png",
+    downloadSizeMB: 160,
+    installedSizeMB: 240,
+    safety: { title: "Potentially Unsafe", desc: "Proprietary, network access, broad permissions", level: "warn" },
+    age: "3+",
+    brand: "#4a154b",
+  },
+  {
+    id: "org.libreoffice.LibreOffice",
+    name: "LibreOffice",
+    summary: "The LibreOffice productivity suite",
+    description:
+      "LibreOffice is a powerful office suite. Its clean interface and feature-rich tools help you unleash your creativity and enhance your productivity. LibreOffice includes Writer, Calc, Impress, Draw, Base, and Math.",
+    developer: "The Document Foundation",
+    verified: true,
+    free: true,
+    license: "MPL-2.0",
+    version: "26.2.4.2",
+    categories: ["work", "learn"],
+    icon: "assets/flathub/org.libreoffice.LibreOffice.png",
+    downloadSizeMB: 340,
+    installedSizeMB: 620,
+    safety: { title: "Safe", desc: "Auditable, sandbox, document filesystem access", level: "ok" },
+    age: "3+",
+    brand: "#18a303",
+    featured: true,
+    editors: true,
+  },
+  {
+    id: "org.qbittorrent.qBittorrent",
+    name: "qBittorrent",
+    summary: "An open-source Bittorrent client",
+    description:
+      "The qBittorrent project aims to provide an open-source software alternative to µTorrent. qBittorrent runs and provides the same features on all major platforms.",
+    developer: "The qBittorrent Project",
+    verified: true,
+    free: true,
+    license: "GPL-3.0-or-later",
+    version: "5.2.3",
+    categories: ["network", "work"],
+    icon: "assets/flathub/org.qbittorrent.qBittorrent.png",
+    downloadSizeMB: 55,
+    installedSizeMB: 90,
+    safety: { title: "Safe", desc: "Auditable, network access, download folder access", level: "ok" },
+    age: "3+",
+    brand: "#3d8ad5",
+  },
+  {
+    id: "org.localsend.localsend_app",
+    name: "LocalSend",
+    summary: "Share files to nearby devices",
+    description:
+      "This app allows you to send files and messages over the local LAN network. In contrast to most alternatives, no external servers are needed. Everything happens locally in the wifi network.",
+    developer: "Tien Do Nam",
+    verified: true,
+    free: true,
+    license: "Apache-2.0",
+    version: "1.17.0",
+    categories: ["work", "network"],
+    icon: "assets/flathub/org.localsend.localsend_app.png",
+    downloadSizeMB: 28,
+    installedSizeMB: 45,
+    safety: { title: "Safe", desc: "Auditable, local network only by default", level: "ok" },
+    age: "3+",
+    brand: "#009688",
+    editors: true,
+  },
+  {
+    id: "com.mattjakeman.ExtensionManager",
+    name: "Extension Manager",
+    summary: "Install GNOME Extensions",
+    description:
+      "Browse and install GNOME Shell extensions to customise your desktop. Browse extensions.gnome.org right inside the app and manage the extensions you already have installed.",
+    developer: "Matthew Jakeman",
+    verified: true,
+    free: true,
+    license: "GPL-3.0-or-later",
+    version: "0.6.5",
+    categories: ["work", "develop"],
+    icon: "assets/flathub/com.mattjakeman.ExtensionManager.png",
+    downloadSizeMB: 12,
+    installedSizeMB: 22,
+    safety: { title: "Safe", desc: "Auditable, manages GNOME extensions only", level: "ok" },
+    age: "3+",
+    brand: "#3584e4",
+    editors: true,
+  },
+  {
+    id: "io.missioncenter.MissionCenter",
+    name: "Mission Center",
+    summary: "Monitor system resource usage",
+    description:
+      "Monitor your CPU, Memory, Disk, Network and GPU usage, accompanied by a per-app and process breakdown of these statistics.",
+    developer: "Mission Center Developers",
+    verified: true,
+    free: true,
+    license: "GPL-3.0-or-later",
+    version: "1.2.0",
+    categories: ["work", "develop"],
+    icon: "assets/flathub/io.missioncenter.MissionCenter.png",
+    downloadSizeMB: 18,
+    installedSizeMB: 32,
+    safety: { title: "Safe", desc: "Auditable, needs system monitor permissions", level: "ok" },
+    age: "3+",
+    brand: "#62a0ea",
+    editors: true,
+  },
+  {
+    id: "org.kde.kdenlive",
+    name: "Kdenlive",
+    summary: "Video editor",
+    description:
+      "Kdenlive is a video editing application with support for many audio and video formats. It offers advanced editing features, a variety of effects and transitions, color correction, audio post-production and subtitling tools.",
+    developer: "KDE",
+    verified: true,
+    free: true,
+    license: "GPL-3.0-only",
+    version: "26.04.3",
+    categories: ["create"],
+    icon: "assets/flathub/org.kde.kdenlive.png",
+    downloadSizeMB: 280,
+    installedSizeMB: 520,
+    safety: { title: "Safe", desc: "Auditable, sandbox, media filesystem access", level: "ok" },
+    age: "3+",
+    brand: "#4d4b8a",
+  },
+  {
+    id: "org.onlyoffice.desktopeditors",
+    name: "ONLYOFFICE Desktop Editors",
+    summary: "Office productivity suite",
+    description:
+      "ONLYOFFICE Desktop Editors is a free and open-source office suite that comprises editors for text documents, spreadsheets, presentations, PDFs and PDF forms, along with a Diagram Viewer.",
+    developer: "ONLYOFFICE",
+    verified: true,
+    free: true,
+    license: "AGPL-3.0-only",
+    version: "9.4.0",
+    categories: ["work", "learn"],
+    icon: "assets/flathub/org.onlyoffice.desktopeditors.png",
+    downloadSizeMB: 390,
+    installedSizeMB: 720,
+    safety: { title: "Safe", desc: "Auditable, sandbox, document filesystem access", level: "ok" },
+    age: "3+",
+    brand: "#ff6f3d",
+  },
+  {
+    id: "org.gnome.Builder",
+    name: "Builder",
+    summary: "Create applications for GNOME",
+    description:
+      "Builder is an actively developed Integrated Development Environment for GNOME. It combines integrated support for essential GNOME technologies such as GTK, GLib, and GNOME APIs with features that any developer will appreciate.",
+    developer: "Christian Hergert",
+    verified: true,
+    free: true,
+    license: "GPL-3.0+",
+    version: "50.0",
+    categories: ["develop"],
+    icon: "assets/flathub/org.gnome.Builder.png",
+    downloadSizeMB: 95,
+    installedSizeMB: 180,
+    safety: { title: "Safe", desc: "Auditable, SDK access for building apps", level: "ok" },
+    age: "3+",
+    brand: "#33d17a",
+    editors: true,
+  },
+  {
+    id: "io.github.flattool.Warehouse",
+    name: "Warehouse",
+    summary: "Manage Flatpak applications and data",
+    description:
+      "Warehouse is a toolkit to manage Flatpak applications, leftover data, and remotes from a friendly GTK interface.",
+    developer: "Heliguy",
+    verified: false,
+    free: true,
+    license: "GPL-3.0-or-later",
+    version: "2.1.0",
+    categories: ["work", "develop"],
+    icon: "assets/flathub/io.github.flattool.Warehouse.png",
+    downloadSizeMB: 10,
+    installedSizeMB: 18,
+    safety: { title: "Safe", desc: "Auditable, manages Flatpak data", level: "ok" },
+    age: "3+",
+    brand: "#c061cb",
+  },
+  {
+    id: "com.github.IsmaelMartinez.teams_for_linux",
+    name: "Teams for Linux",
+    summary: "Unofficial Microsoft Teams client",
+    description:
+      "Unofficial Microsoft Teams client for Linux using Electron. Stay connected with your work chats, meetings and files.",
+    developer: "Ismael Martinez",
+    verified: false,
+    free: true,
+    license: "GPL-3.0-only",
+    version: "2.0.0",
+    categories: ["work", "socialize"],
+    icon: "assets/flathub/com.github.IsmaelMartinez.teams_for_linux.png",
+    downloadSizeMB: 160,
+    installedSizeMB: 240,
+    safety: { title: "Potentially Unsafe", desc: "Third-party client, network access", level: "warn" },
+    age: "3+",
+    brand: "#6264a7",
+  },
+  {
+    id: "net.lutris.Lutris",
+    name: "Lutris",
+    summary: "Video game preservation platform",
+    description:
+      "Lutris helps you install and play video games from all eras and from most gaming systems. By leveraging and combining existing emulators, engine re-implementations and compatibility layers, it gives you a central interface to launch all your games.",
+    developer: "Lutris Team",
+    verified: true,
+    free: true,
+    license: "GPL-3.0-or-later",
+    version: "0.5.22",
+    categories: ["play"],
+    icon: "assets/flathub/net.lutris.Lutris.png",
+    downloadSizeMB: 85,
+    installedSizeMB: 140,
+    safety: { title: "Safe", desc: "Auditable, needs filesystem access for games", level: "ok" },
+    age: "13+",
+    brand: "#ff9900",
+    popular: true,
+    editors: true,
+  },
+  {
+    id: "io.github.jliljebl.Flowblade",
+    name: "Flowblade",
+    summary: "Video Editor - Fast, Precise, Stable",
+    description:
+      "Flowblade is a multitrack non-linear video editor released under GPL3 license. From beginners to masters, Flowblade helps make your vision a reality of image and sound.",
+    developer: "Janne Liljeblad",
+    verified: true,
+    free: true,
+    license: "GPL-3.0+",
+    version: "2.24.1",
+    categories: ["create"],
+    icon: "assets/flathub/io.github.jliljebl.Flowblade.png",
+    downloadSizeMB: 120,
+    installedSizeMB: 210,
+    safety: { title: "Safe", desc: "Auditable, sandbox, media filesystem access", level: "ok" },
+    age: "3+",
+    brand: "#3584e4",
+    editors: true,
+  },
+  {
+    id: "io.github.fabrialberio.pinapp",
+    name: "Pins",
+    summary: "Create and edit app shortcuts",
+    description:
+      "Pins allows you to customize your app menu by editing .desktop files. Some of the things you can do are: changing an app icon that doesn't fit in with your theme, creating custom shortcuts to websites, hiding apps you don't want to see, and editing properties in .desktop files.",
+    developer: "Fabrizio Alberio",
+    verified: true,
+    free: true,
+    license: "GPL-3.0-or-later",
+    version: "2.4.7",
+    categories: ["work", "develop"],
+    icon: "assets/flathub/io.github.fabrialberio.pinapp.png",
+    downloadSizeMB: 8,
+    installedSizeMB: 14,
+    safety: { title: "Safe", desc: "Auditable, manages desktop entry files", level: "ok" },
+    age: "3+",
+    brand: "#1a5fb4",
+    editors: true,
+  },
+  {
+    id: "com.vysp3r.ProtonPlus",
+    name: "ProtonPlus",
+    summary: "A modern compatibility tools manager",
+    description:
+      "ProtonPlus is a simple tool to help you manage your compatibility tools for Steam, Lutris, Heroic Games Launcher and Bottles. Manage supported compatibility tools across supported launchers, change the compatibility tool and launch options of your Steam games, and more.",
+    developer: "Vysp3r",
+    verified: true,
+    free: true,
+    license: "GPL-3.0-or-later",
+    version: "0.5.22",
+    categories: ["play", "work"],
+    icon: "assets/flathub/com.vysp3r.ProtonPlus.png",
+    downloadSizeMB: 15,
+    installedSizeMB: 28,
+    safety: { title: "Safe", desc: "Auditable, manages Proton/Wine tool installs", level: "ok" },
+    age: "3+",
+    brand: "#993d3d",
+    popular: true,
+    editors: true,
+  },
+];
+
+const SW_CATEGORIES = [
+  { id: "create", name: "Create", icon: "assets/apps/org.gnome.Software.Create.png" },
+  { id: "work", name: "Work", icon: "assets/apps/org.gnome.Software.Work.png" },
+  { id: "play", name: "Play", icon: "assets/apps/org.gnome.Software.Play.png" },
+  { id: "socialize", name: "Socialize", icon: "assets/apps/org.gnome.Software.Socialize.png" },
+  { id: "learn", name: "Learn", icon: "assets/apps/org.gnome.Software.Learn.png" },
+  { id: "develop", name: "Develop", icon: "assets/apps/org.gnome.Software.Develop.png" },
+];
+
+/** System apps already present on the desktop (not Flathub installable here). */
+const SW_SYSTEM_INSTALLED = [
+  {
+    id: "system.files",
+    name: "Files",
+    summary: "Access and organize files",
+    icon: "assets/apps/org.gnome.Nautilus.png",
+    source: "System",
+    version: "50.0",
+  },
+  {
+    id: "system.settings",
+    name: "Settings",
+    summary: "System settings",
+    icon: "assets/apps/org.gnome.Settings.png",
+    source: "System",
+    version: "50.0",
+  },
+  {
+    id: "system.software",
+    name: "App Center",
+    summary: "Install and update apps",
+    icon: "assets/apps/org.gnome.Software.png",
+    source: "System",
+    version: "50.0",
+  },
+];
+
+function loadInstalledFlathubIds() {
+  /** Always include apps that already ship on this desktop. */
+  const set = new Set(Object.keys(SW_DESKTOP_PREINSTALLED));
+  try {
+    const raw = localStorage.getItem(SW_STORAGE_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) arr.forEach((id) => set.add(id));
+    }
+  } catch {
+    /* ignore */
+  }
+  return set;
+}
+
+function saveInstalledFlathubIds(set) {
+  try {
+    // Persist user installs only — desktop preinstalled stay implicit
+    const userIds = [...set].filter((id) => !SW_DESKTOP_PREINSTALLED[id]);
+    localStorage.setItem(SW_STORAGE_KEY, JSON.stringify(userIds));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+/** @type {Set<string>} */
+let installedFlathubIds = loadInstalledFlathubIds();
+
+function isDesktopPreinstalled(id) {
+  return Boolean(SW_DESKTOP_PREINSTALLED[id]);
+}
+
+/**
+ * True if this Flathub app is already represented on the shell
+ * (dock favorite or an overview tile with the same display name).
+ */
+function isAlreadyOnDesktop(appId) {
+  if (isDesktopPreinstalled(appId)) return true;
+  const app = getFlathubApp(appId);
+  if (!app) return false;
+  const name = app.name.toLowerCase();
+  return APPS.some((a) => {
+    if (a.id === appId) return true;
+    const n = (a.name || "").toLowerCase();
+    return n === name || n.startsWith(name + " ");
+  });
+}
+
+function isFlathubInstalled(id) {
+  return installedFlathubIds.has(id);
+}
+
+function getFlathubApp(id) {
+  return FLATHUB_APPS.find((a) => a.id === id) || null;
+}
+
+function formatSizeMB(mb) {
+  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+  return `${Math.round(mb)} MB`;
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function openSoftware(opts = {}) {
+  closeAppMenu();
+  closeQuickSettings();
+  closeCalendar();
+  if (swMenu) swMenu.hidden = true;
+
+  softwareWorkspace = activeWorkspace;
+  softwareWindow.dataset.workspace = String(softwareWorkspace);
+  placeSoftwareOnWorkspace();
+  softwareWindow.hidden = false;
+  softwareWindow.classList.remove("is-opening");
+  void softwareWindow.offsetWidth;
+  softwareWindow.classList.add("is-opening");
+  const clearOpening = () => softwareWindow.classList.remove("is-opening");
+  softwareWindow.addEventListener("animationend", clearOpening, { once: true });
+  window.setTimeout(clearOpening, 200);
+
+  if (opts.appId) {
+    softwareOpenDetails(opts.appId);
+  } else if (opts.tab) {
+    softwareShowMain();
+    softwareSetTab(opts.tab);
+  } else if (softwareView === "details" && softwareDetailsId) {
+    softwareOpenDetails(softwareDetailsId);
+  } else if (softwareView === "category" && softwareCategoryId) {
+    softwareOpenCategory(softwareCategoryId);
+  } else {
+    softwareShowMain();
+    renderSoftwareBody();
+  }
+
+  startSoftwareCarousel();
+}
+
+function closeSoftware() {
+  softwareWindow.hidden = true;
+  softwareWindow.classList.remove("is-opening");
+  stopSoftwareCarousel();
+  if (swMenu) swMenu.hidden = true;
+  setSoftwareSearchOpen(false);
+}
+
+function toggleSoftware() {
+  if (softwareWindow.hidden) openSoftware();
+  else closeSoftware();
+}
+
+function softwareShowMain() {
+  softwareView = "main";
+  if (swShell) swShell.hidden = false;
+  if (swDetails) swDetails.hidden = true;
+  if (swCategory) swCategory.hidden = true;
+  softwareDetailsId = null;
+  softwareCategoryId = null;
+  renderSoftwareBody();
+}
+
+function setSoftwareSearchOpen(open) {
+  softwareSearchOpen = open;
+  if (swSearchBar) swSearchBar.hidden = !open;
+  swSearchBtn?.classList.toggle("active", open);
+  swSearchBtn?.setAttribute("aria-pressed", open ? "true" : "false");
+  if (open) {
+    softwareTab = "search";
+    updateSoftwareSwitcher();
+    swSearchInput?.focus();
+    renderSoftwareBody();
+  } else {
+    softwareSearchQuery = "";
+    if (swSearchInput) swSearchInput.value = "";
+    if (softwareTab === "search") {
+      softwareTab = "explore";
+      updateSoftwareSwitcher();
+    }
+    renderSoftwareBody();
+  }
+}
+
+function softwareSetTab(tab) {
+  softwareTab = tab;
+  if (tab !== "search") setSoftwareSearchOpen(false);
+  updateSoftwareSwitcher();
+  softwareShowMain();
+}
+
+function updateSoftwareSwitcher() {
+  document.querySelectorAll(".sw-switcher-btn").forEach((btn) => {
+    const on = btn.dataset.swTab === softwareTab;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+}
+
+function renderSoftwareBody() {
+  if (!swBody) return;
+  if (softwareTab === "explore") swBody.innerHTML = renderExplorePage();
+  else if (softwareTab === "installed") swBody.innerHTML = renderInstalledPage();
+  else if (softwareTab === "updates") swBody.innerHTML = renderUpdatesPage();
+  else if (softwareTab === "search") swBody.innerHTML = renderSearchPage();
+  bindSoftwareBodyHandlers();
+  if (softwareTab === "explore") {
+    softwareCarouselIndex = 0;
+    updateCarouselSlide();
+  }
+}
+
+function renderExplorePage() {
+  const featured = FLATHUB_APPS.filter((a) => a.featured);
+  const editors = FLATHUB_APPS.filter((a) => a.editors);
+  const popular = FLATHUB_APPS.filter((a) => a.popular);
+
+  const slides = featured
+    .map(
+      (app, i) => `
+      <div class="sw-carousel-slide${i === 0 ? " active" : ""}" data-sw-app="${escapeHtml(app.id)}" style="background: linear-gradient(135deg, ${app.brand}cc 0%, ${app.brand}66 40%, #1a1a1a 100%);">
+        <img class="sw-carousel-icon" src="${app.icon}" alt="" draggable="false" />
+        <div class="sw-carousel-meta">
+          <div class="sw-carousel-name">${escapeHtml(app.name)}</div>
+          <div class="sw-carousel-summary">${escapeHtml(app.summary)}</div>
+          <div class="sw-carousel-source">
+            <img class="sym" src="assets/software/package-generic-symbolic.svg" alt="" draggable="false" />
+            <span>Flathub</span>
+          </div>
+        </div>
+      </div>`
+    )
+    .join("");
+
+  const dots = featured
+    .map(
+      (_, i) =>
+        `<button type="button" class="sw-carousel-dot${i === 0 ? " active" : ""}" data-carousel-dot="${i}" aria-label="Featured slide ${i + 1}"></button>`
+    )
+    .join("");
+
+  const cats = SW_CATEGORIES.map(
+    (c) => `
+    <button type="button" class="sw-category-tile" data-sw-category="${c.id}">
+      <img src="${c.icon}" alt="" draggable="false" />
+      <span class="sw-category-tile-name">${escapeHtml(c.name)}</span>
+    </button>`
+  ).join("");
+
+  return `
+    <div class="sw-clamp">
+      <div class="sw-flathub-banner">
+        <img class="sym" src="assets/software/package-generic-symbolic.svg" alt="" draggable="false" />
+        <span><strong>Flathub</strong> — apps from the largest Linux app store, sandboxed with Flatpak</span>
+      </div>
+      <div class="sw-carousel" id="sw-carousel" role="region" aria-label="Featured apps">
+        ${slides}
+        <div class="sw-carousel-dots">${dots}</div>
+      </div>
+      <div class="sw-categories">${cats}</div>
+      <h2 class="sw-heading">Editor’s Choice</h2>
+      <div class="sw-tile-grid">${editors.map(appTileHtml).join("")}</div>
+      <h2 class="sw-heading">Popular on Flathub</h2>
+      <div class="sw-tile-grid">${popular.map(appTileHtml).join("")}</div>
+      <h2 class="sw-heading">New &amp; Updated</h2>
+      <div class="sw-tile-grid">${FLATHUB_APPS.slice(0, 9).map(appTileHtml).join("")}</div>
+    </div>`;
+}
+
+function appTileHtml(app) {
+  const installed = isFlathubInstalled(app.id);
+  return `
+    <button type="button" class="sw-app-tile" data-sw-app="${escapeHtml(app.id)}">
+      <img class="sw-app-tile-icon" src="${app.icon}" alt="" draggable="false" />
+      <span class="sw-app-tile-meta">
+        <span class="sw-app-tile-name">${escapeHtml(app.name)}</span>
+        <span class="sw-app-tile-summary">${escapeHtml(app.summary)}</span>
+      </span>
+      ${
+        installed
+          ? `<span class="sw-app-tile-badge" title="Installed"><img class="sym" src="assets/software/app-installed-symbolic.svg" alt="" draggable="false" /></span>`
+          : ""
+      }
+    </button>`;
+}
+
+function renderInstalledPage() {
+  const flathubInstalled = FLATHUB_APPS.filter((a) => isFlathubInstalled(a.id));
+  const rows = [
+    ...SW_SYSTEM_INSTALLED.map(
+      (a) => `
+      <div class="sw-app-row" data-sw-system="${escapeHtml(a.id)}">
+        <img class="sw-app-row-icon" src="${a.icon}" alt="" draggable="false" />
+        <span class="sw-app-row-meta">
+          <span class="sw-app-row-name">${escapeHtml(a.name)}</span>
+          <span class="sw-app-row-sub">${escapeHtml(a.source)} · ${escapeHtml(a.version)}</span>
+        </span>
+      </div>`
+    ),
+    ...flathubInstalled.map(
+      (a) => `
+      <button type="button" class="sw-app-row" data-sw-app="${escapeHtml(a.id)}">
+        <img class="sw-app-row-icon" src="${a.icon}" alt="" draggable="false" />
+        <span class="sw-app-row-meta">
+          <span class="sw-app-row-name">${escapeHtml(a.name)}</span>
+          <span class="sw-app-row-sub">Flathub · ${escapeHtml(a.version)}</span>
+        </span>
+        <span class="sw-app-row-action">
+          <span class="sw-btn sw-btn-suggested" data-sw-open="${escapeHtml(a.id)}" style="pointer-events:none;height:28px;font-size:12px;">Open</span>
+        </span>
+      </button>`
+    ),
+  ];
+
+  if (!flathubInstalled.length) {
+    return `
+      <div class="sw-clamp">
+        <h2 class="sw-heading">Installed</h2>
+        <div class="sw-list">${rows.join("")}</div>
+        <div class="sw-status" style="min-height:160px;padding:32px 24px;">
+          <div class="sw-status-title">No Flathub apps installed yet</div>
+          <div class="sw-status-desc">Browse Explore to install popular apps from Flathub. Installed Flatpaks will show up here.</div>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="sw-clamp">
+      <h2 class="sw-heading">Installed</h2>
+      <div class="sw-list">${rows.join("")}</div>
+    </div>`;
+}
+
+function renderUpdatesPage() {
+  return `
+    <div class="sw-clamp">
+      <div class="sw-status">
+        <img class="sw-status-icon" src="assets/software/software-updates-symbolic.svg" alt="" draggable="false" style="filter:var(--win-sym-filter);" />
+        <div class="sw-status-title">Apps are up to date</div>
+        <div class="sw-status-desc">When updates are available for system packages or Flatpaks from Flathub, they will appear here.</div>
+      </div>
+    </div>`;
+}
+
+function renderSearchPage() {
+  const q = softwareSearchQuery.trim().toLowerCase();
+  if (!q) {
+    return `
+      <div class="sw-clamp">
+        <div class="sw-status">
+          <div class="sw-status-title">Search Flathub</div>
+          <div class="sw-status-desc">Try “firefox”, “gimp”, “spotify”, or “code”.</div>
+        </div>
+      </div>`;
+  }
+  const hits = FLATHUB_APPS.filter((a) => {
+    const hay = [a.name, a.summary, a.developer, a.id, ...(a.categories || [])]
+      .join(" ")
+      .toLowerCase();
+    return q.split(/\s+/).every((w) => hay.includes(w));
+  });
+  if (!hits.length) {
+    return `
+      <div class="sw-clamp">
+        <div class="sw-status">
+          <div class="sw-status-title">No Results Found</div>
+          <div class="sw-status-desc">No apps matching “${escapeHtml(softwareSearchQuery)}”.</div>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="sw-clamp">
+      <h2 class="sw-heading">Results</h2>
+      <div class="sw-tile-grid">${hits.map(appTileHtml).join("")}</div>
+    </div>`;
+}
+
+function bindSoftwareBodyHandlers() {
+  swBody?.querySelectorAll("[data-sw-app]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      softwareOpenDetails(el.dataset.swApp);
+    });
+  });
+  swBody?.querySelectorAll("[data-sw-category]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      softwareOpenCategory(el.dataset.swCategory);
+    });
+  });
+  swBody?.querySelectorAll("[data-carousel-dot]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      softwareCarouselIndex = Number(el.dataset.carouselDot) || 0;
+      updateCarouselSlide();
+      startSoftwareCarousel();
+    });
+  });
+}
+
+function startSoftwareCarousel() {
+  stopSoftwareCarousel();
+  softwareCarouselTimer = window.setInterval(() => {
+    if (softwareWindow.hidden || softwareView !== "main" || softwareTab !== "explore") return;
+    const featured = FLATHUB_APPS.filter((a) => a.featured);
+    if (featured.length < 2) return;
+    softwareCarouselIndex = (softwareCarouselIndex + 1) % featured.length;
+    updateCarouselSlide();
+  }, 5000);
+}
+
+function stopSoftwareCarousel() {
+  if (softwareCarouselTimer) {
+    clearInterval(softwareCarouselTimer);
+    softwareCarouselTimer = 0;
+  }
+}
+
+function updateCarouselSlide() {
+  const carousel = document.getElementById("sw-carousel");
+  if (!carousel) return;
+  carousel.querySelectorAll(".sw-carousel-slide").forEach((s, i) => {
+    s.classList.toggle("active", i === softwareCarouselIndex);
+  });
+  carousel.querySelectorAll(".sw-carousel-dot").forEach((d, i) => {
+    d.classList.toggle("active", i === softwareCarouselIndex);
+  });
+}
+
+function softwareOpenCategory(catId) {
+  if (overviewOpen || overviewAnimating) return;
+  const cat = SW_CATEGORIES.find((c) => c.id === catId);
+  if (!cat) return;
+  softwareView = "category";
+  softwareCategoryId = catId;
+  if (swShell) swShell.hidden = true;
+  if (swDetails) swDetails.hidden = true;
+  if (swCategory) swCategory.hidden = false;
+  if (swCategoryTitle) swCategoryTitle.textContent = cat.name;
+  const apps = FLATHUB_APPS.filter((a) => (a.categories || []).includes(catId));
+  swCategoryBody.innerHTML = `
+    <div class="sw-clamp">
+      <div class="sw-flathub-banner">
+        <img class="sym" src="assets/software/package-generic-symbolic.svg" alt="" draggable="false" />
+        <span>Apps in <strong>${escapeHtml(cat.name)}</strong> from Flathub</span>
+      </div>
+      <div class="sw-tile-grid">${apps.map(appTileHtml).join("")}</div>
+    </div>`;
+  swCategoryBody.querySelectorAll("[data-sw-app]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      softwareOpenDetails(el.dataset.swApp);
+    });
+  });
+}
+
+function softwareOpenDetails(appId) {
+  // Overview workspace cards are non-interactive (Shell parity)
+  if (overviewOpen || overviewAnimating) return;
+  const app = getFlathubApp(appId);
+  if (!app) return;
+  softwareView = "details";
+  softwareDetailsId = appId;
+  if (swShell) swShell.hidden = true;
+  if (swCategory) swCategory.hidden = true;
+  if (swDetails) swDetails.hidden = false;
+  renderSoftwareDetails(app);
+}
+
+function installState(appId) {
+  if (softwareInstallJobs.has(appId)) {
+    const job = softwareInstallJobs.get(appId);
+    return { kind: "installing", ...job };
+  }
+  if (isFlathubInstalled(appId)) return { kind: "installed" };
+  return { kind: "available" };
+}
+
+function renderSoftwareDetails(app) {
+  const state = installState(app.id);
+  const actions = renderDetailsActions(app, state);
+  const safetyGreen = app.safety.level === "ok";
+  const licenseTitle = app.free ? "Open Source" : "Proprietary";
+  const licenseSub = app.free
+    ? `${app.license} — source code can be audited and shared`
+    : `${app.license} — source code is not publicly available`;
+
+  swDetailsBody.innerHTML = `
+    <div class="sw-details-clamp">
+      <div class="sw-details-hero">
+        <img class="sw-details-icon" src="${app.icon}" alt="" draggable="false" />
+        <div class="sw-details-hero-main">
+          <div class="sw-details-name">${escapeHtml(app.name)}</div>
+          <div class="sw-details-developer">${escapeHtml(app.developer)}</div>
+          ${
+            app.verified
+              ? `<div class="sw-details-verified"><img class="sym" src="assets/software/app-verified-symbolic.svg" alt="" draggable="false" /><span>Verified</span></div>`
+              : ""
+          }
+        </div>
+        <div class="sw-details-actions" id="sw-details-actions">
+          ${actions}
+        </div>
+      </div>
+
+      <div class="sw-screenshots" aria-label="Screenshots">
+        <div class="sw-shot" style="--sw-brand:${app.brand}">${escapeHtml(app.name)} — main window</div>
+        <div class="sw-shot" style="--sw-brand:${app.brand};opacity:0.92">Preferences</div>
+        <div class="sw-shot" style="--sw-brand:${app.brand};opacity:0.85">About</div>
+      </div>
+
+      <div class="sw-details-summary">${escapeHtml(app.summary)}</div>
+      <div class="sw-details-desc">${escapeHtml(app.description)}</div>
+
+      <div class="sw-context-bar">
+        <div class="sw-context-tile">
+          <div class="sw-lozenge">${formatSizeMB(app.downloadSizeMB)}</div>
+          <div class="sw-context-title">Download Size</div>
+          <div class="sw-context-desc">Needs ${formatSizeMB(app.downloadSizeMB)} download · ${formatSizeMB(app.installedSizeMB)} installed</div>
+        </div>
+        <div class="sw-context-tile">
+          <div class="sw-lozenge circular ${safetyGreen ? "green" : ""}">
+            <img class="sym" src="assets/software/app-safety-ok-symbolic.svg" alt="" draggable="false" />
+          </div>
+          <div class="sw-context-title">${escapeHtml(app.safety.title)}</div>
+          <div class="sw-context-desc">${escapeHtml(app.safety.desc)}</div>
+        </div>
+        <div class="sw-context-tile">
+          <div class="sw-lozenge circular green">
+            <img class="sym" src="assets/software/app-safety-ok-symbolic.svg" alt="" draggable="false" />
+          </div>
+          <div class="sw-context-title">Desktop</div>
+          <div class="sw-context-desc">Works on desktops and large tablets</div>
+        </div>
+        <div class="sw-context-tile">
+          <div class="sw-lozenge circular">${escapeHtml(app.age)}</div>
+          <div class="sw-context-title">Age Rating</div>
+          <div class="sw-context-desc">${app.age === "3+" ? "No age-inappropriate content" : "May not be suitable for children"}</div>
+        </div>
+      </div>
+
+      <div class="sw-info-list">
+        <div class="sw-info-row">
+          <span class="sw-info-label">Version</span>
+          <span class="sw-info-value">${escapeHtml(app.version)}</span>
+        </div>
+        <div class="sw-info-row">
+          <span class="sw-info-label">Source</span>
+          <span class="sw-info-value">Flathub (flatpak)</span>
+        </div>
+        <div class="sw-info-row">
+          <span class="sw-info-label">Runtime</span>
+          <span class="sw-info-value">org.freedesktop.Platform</span>
+        </div>
+        <div class="sw-info-row">
+          <span class="sw-info-label">App ID</span>
+          <span class="sw-info-value">${escapeHtml(app.id)}</span>
+        </div>
+      </div>
+
+      <div class="sw-license-card">
+        <div class="sw-lozenge ${app.free ? "green" : ""}">${app.free ? "FOSS" : "⊗"}</div>
+        <div class="sw-license-text">
+          <div class="sw-license-title">${licenseTitle}</div>
+          <div class="sw-license-sub">${escapeHtml(licenseSub)}</div>
+        </div>
+      </div>
+    </div>
+    <div class="sw-toast" id="sw-toast" role="status"></div>`;
+
+  bindDetailsActions(app);
+}
+
+function renderDetailsActions(app, state) {
+  if (state.kind === "installing") {
+    const phase = state.phase === "installing" ? "Installing" : "Downloading";
+    const pct = Math.min(100, Math.round(state.progress || 0));
+    return `
+      <button type="button" class="sw-btn sw-btn-progress" id="sw-install-btn" data-action="cancel" style="--sw-progress:${pct}%" aria-label="Cancel installation">
+        <span class="sw-progress-label">Cancel</span>
+        <span class="sw-progress-sub"><span>${phase}</span><span>${pct}%</span></span>
+      </button>
+      <div class="sw-origin">
+        <img class="sym" src="assets/software/package-generic-symbolic.svg" alt="" draggable="false" />
+        <span>Flathub</span>
+      </div>`;
+  }
+  if (state.kind === "installed") {
+    const canRemove = !isDesktopPreinstalled(app.id);
+    return `
+      <div style="display:flex;gap:9px;align-items:center;">
+        <button type="button" class="sw-btn sw-btn-suggested" id="sw-install-btn" data-action="open">Open</button>
+        ${
+          canRemove
+            ? `<button type="button" class="sw-btn sw-btn-icon" id="sw-remove-btn" data-action="remove" title="Uninstall" aria-label="Uninstall">
+          <img class="sym" src="assets/software/user-trash-symbolic.svg" alt="" draggable="false" />
+        </button>`
+            : ""
+        }
+      </div>
+      <div class="sw-origin">
+        <img class="sym" src="assets/software/package-generic-symbolic.svg" alt="" draggable="false" />
+        <span>${isDesktopPreinstalled(app.id) ? "System" : "Flathub"}</span>
+      </div>`;
+  }
+  return `
+    <button type="button" class="sw-btn sw-btn-suggested" id="sw-install-btn" data-action="install">Install</button>
+    <div class="sw-origin">
+      <img class="sym" src="assets/software/package-generic-symbolic.svg" alt="" draggable="false" />
+      <span>Flathub</span>
+    </div>`;
+}
+
+function bindDetailsActions(app) {
+  const installBtn = document.getElementById("sw-install-btn");
+  const removeBtn = document.getElementById("sw-remove-btn");
+  installBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const action = installBtn.dataset.action;
+    if (action === "install") startSoftwareInstall(app.id);
+    else if (action === "cancel") cancelSoftwareInstall(app.id);
+    else if (action === "open") {
+      showSoftwareToast(`${app.name} would open here`);
+    }
+  });
+  removeBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    uninstallSoftwareApp(app.id);
+  });
+}
+
+/**
+ * Simulate the GNOME Software + Flatpak install pipeline:
+ *   available → downloading (progress on Cancel button) → installing → installed (Open)
+ * Timing is shortened for the preview but stages match the real UI.
+ */
+function startSoftwareInstall(appId) {
+  if (softwareInstallJobs.has(appId) || isFlathubInstalled(appId)) return;
+  const app = getFlathubApp(appId);
+  if (!app) return;
+
+  const job = {
+    progress: 0,
+    phase: "downloading",
+    timer: 0,
+  };
+  softwareInstallJobs.set(appId, job);
+  refreshDetailsIfCurrent(appId);
+
+  // Scale duration slightly with size (3.2s–7s download + install)
+  const downloadMs = 2800 + Math.min(app.downloadSizeMB, 400) * 8;
+  const installMs = 900;
+  const tickMs = 80;
+  const downloadSteps = downloadMs / tickMs;
+  let step = 0;
+
+  job.timer = window.setInterval(() => {
+    step += 1;
+    if (job.phase === "downloading") {
+      job.progress = Math.min(92, (step / downloadSteps) * 92);
+      if (step >= downloadSteps) {
+        job.phase = "installing";
+        job.progress = 94;
+        step = 0;
+      }
+    } else if (job.phase === "installing") {
+      job.progress = 94 + Math.min(6, (step / (installMs / tickMs)) * 6);
+      if (step * tickMs >= installMs) {
+        clearInterval(job.timer);
+        softwareInstallJobs.delete(appId);
+        finishSoftwareInstall(appId);
+        return;
+      }
+    }
+    updateInstallProgressUI(appId);
+  }, tickMs);
+}
+
+function updateInstallProgressUI(appId) {
+  if (softwareDetailsId !== appId) return;
+  const job = softwareInstallJobs.get(appId);
+  const app = getFlathubApp(appId);
+  if (!job || !app) return;
+  const actions = document.getElementById("sw-details-actions");
+  if (!actions) return;
+  actions.innerHTML = renderDetailsActions(app, { kind: "installing", ...job });
+  bindDetailsActions(app);
+}
+
+function cancelSoftwareInstall(appId) {
+  const job = softwareInstallJobs.get(appId);
+  if (job) {
+    clearInterval(job.timer);
+    softwareInstallJobs.delete(appId);
+  }
+  refreshDetailsIfCurrent(appId);
+  showSoftwareToast("Installation cancelled");
+}
+
+function finishSoftwareInstall(appId) {
+  installedFlathubIds.add(appId);
+  saveInstalledFlathubIds(installedFlathubIds);
+  addInstalledAppToOverview(appId);
+  refreshDetailsIfCurrent(appId);
+  const app = getFlathubApp(appId);
+  showSoftwareToast(`${app?.name || "App"} installed`);
+}
+
+function uninstallSoftwareApp(appId) {
+  if (isDesktopPreinstalled(appId)) {
+    const app = getFlathubApp(appId);
+    showSoftwareToast(
+      `${app?.name || "App"} is already part of this desktop`
+    );
+    return;
+  }
+  installedFlathubIds.delete(appId);
+  saveInstalledFlathubIds(installedFlathubIds);
+  removeInstalledAppFromOverview(appId);
+  refreshDetailsIfCurrent(appId);
+  const app = getFlathubApp(appId);
+  showSoftwareToast(`${app?.name || "App"} removed`);
+}
+
+function refreshDetailsIfCurrent(appId) {
+  if (softwareDetailsId === appId) {
+    const app = getFlathubApp(appId);
+    if (app) renderSoftwareDetails(app);
+  }
+}
+
+function showSoftwareToast(message) {
+  const toast = document.getElementById("sw-toast");
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.add("show");
+  window.setTimeout(() => toast.classList.remove("show"), 2400);
+}
+
+/** After install, surface the app in the Shell overview grid (newcomer-friendly). */
+function addInstalledAppToOverview(appId) {
+  const app = getFlathubApp(appId);
+  if (!app) return;
+  // Dock / system apps already live on the desktop — don't create a second tile
+  if (isAlreadyOnDesktop(appId)) return;
+  if (APPS.some((a) => a.id === appId)) return;
+  // Same display name already in the grid (e.g. LibreOffice suite)
+  const name = app.name.toLowerCase();
+  if (
+    APPS.some((a) => {
+      const n = (a.name || "").toLowerCase();
+      return n === name || n.startsWith(name + " ");
+    })
+  ) {
+    return;
+  }
+  APPS.push({ id: appId, name: app.name, icon: app.icon, fromFlathub: true });
+  if (typeof renderApps === "function") renderApps(appSearch?.value || "");
+}
+
+function removeInstalledAppFromOverview(appId) {
+  const idx = APPS.findIndex((a) => a.id === appId && a.fromFlathub);
+  if (idx >= 0) {
+    APPS.splice(idx, 1);
+    if (typeof renderApps === "function") renderApps(appSearch?.value || "");
+  }
+}
+
+/** Drop overview clones for apps that already belong on the desktop (dock/system). */
+function purgeDuplicateOverviewApps() {
+  let changed = false;
+  for (let i = APPS.length - 1; i >= 0; i--) {
+    const entry = APPS[i];
+    if (entry.fromFlathub && isDesktopPreinstalled(entry.id)) {
+      APPS.splice(i, 1);
+      changed = true;
+    }
+  }
+  if (changed && typeof renderApps === "function") {
+    renderApps(appSearch?.value || "");
+  }
+}
+
+// Restore user-installed Flathub apps into overview on load
+// (skips dock/system apps so Steam/Brave never double up)
+purgeDuplicateOverviewApps();
+installedFlathubIds.forEach((id) => addInstalledAppToOverview(id));
+
+// Software chrome handlers
+swCloseBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  closeSoftware();
+});
+swDetailsClose?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  closeSoftware();
+});
+swCategoryClose?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  closeSoftware();
+});
+swDetailsBack?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (softwareCategoryId) softwareOpenCategory(softwareCategoryId);
+  else softwareShowMain();
+});
+swCategoryBack?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  softwareShowMain();
+});
+swSearchBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  setSoftwareSearchOpen(!softwareSearchOpen);
+});
+swSearchInput?.addEventListener("input", () => {
+  softwareSearchQuery = swSearchInput.value;
+  if (softwareTab !== "search") {
+    softwareTab = "search";
+    updateSoftwareSwitcher();
+  }
+  renderSoftwareBody();
+});
+swSearchInput?.addEventListener("click", (e) => e.stopPropagation());
+
+document.querySelectorAll(".sw-switcher-btn").forEach((btn) => {
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    softwareSetTab(btn.dataset.swTab);
+  });
+});
+
+swMenuBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (!swMenu) return;
+  swMenu.hidden = !swMenu.hidden;
+});
+
+swMenu?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const item = e.target.closest(".sw-menu-item");
+  if (!item) return;
+  swMenu.hidden = true;
+  if (item.dataset.swAction === "repos") {
+    showSoftwareToast("Software Repositories — Flathub is enabled");
+  } else if (item.dataset.swAction === "about") {
+    showSoftwareToast("App Center · Flathub preview");
+  }
+});
+
+softwareWindow?.addEventListener("click", (e) => {
+  // In overview, window is inert — let the workspace card handle the click
+  if (overviewOpen || overviewAnimating) return;
+  e.stopPropagation();
+  if (swMenu && !swMenu.hidden && !e.target.closest("#sw-menu-btn") && !e.target.closest("#sw-menu")) {
+    swMenu.hidden = true;
+  }
 });
 
 /* Boot workspace layer (must run after DOM + nautilus node exist) */
