@@ -239,6 +239,22 @@ function applyWorkspaceGeometry({ mode, progress = activeWorkspace, animate = fa
   });
 }
 
+/**
+ * Keep the layout switcher in the active workspace scaler, above the pane
+ * wallpaper and under .workspace-pane-windows (so windows cover it).
+ */
+function placeLayoutChooser() {
+  const chooser = document.getElementById("layout-chooser");
+  if (!chooser) return;
+  const host = document.querySelector(
+    `#workspace-pane-${activeWorkspace} .workspace-pane-scaler`
+  );
+  const windows = document.getElementById(`workspace-windows-${activeWorkspace}`);
+  if (!host || !windows) return;
+  if (chooser.parentElement === host && chooser.nextElementSibling === windows) return;
+  host.insertBefore(chooser, windows);
+}
+
 function updateWorkspaceChrome(progress = workspaceProgress) {
   workspaceProgress = progress;
   const panes = workspacePanes();
@@ -253,6 +269,8 @@ function updateWorkspaceChrome(progress = workspaceProgress) {
     const on = i === activeWorkspace;
     pane.classList.toggle("active", on);
   });
+
+  placeLayoutChooser();
 
   hits.forEach((hit, i) => {
     const on = i === activeWorkspace;

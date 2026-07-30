@@ -187,7 +187,8 @@ img {
   height: calc(100% - var(--panel-height));
   z-index: 10;
   overflow: hidden;
-  pointer-events: auto;
+  /* none so empty desktop passes clicks; windows + layout-chooser re-enable */
+  pointer-events: none;
   will-change: top, left, width, height;
 }
 
@@ -246,19 +247,25 @@ img {
   transform: scale(1);
   transform-origin: top left;
   will-change: transform;
+  /* Full work-area host: do not steal clicks; windows + layout-chooser re-enable */
+  pointer-events: none;
 }
 
 .workspace-pane-bg {
   position: absolute;
   inset: 0;
   z-index: 0;
+  pointer-events: none;
 }
 
 .workspace-pane-windows {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  /* Above .layout-chooser (1) so app windows cover the switcher */
+  z-index: 2;
   /* Windows are positioned relative to full work-area size inside the scaler */
+  /* none so empty space passes through; .nautilus-window etc. set auto */
+  pointer-events: none;
 }
 
 /* Animate geometry when opening/closing overview or switching */
@@ -1363,12 +1370,19 @@ html[data-night-light="on"] .night-light-overlay::after {
 }
 
 /* ========== Layout chooser (preview chrome — same as Deepin) ========== */
+/*
+ * Lives inside the active .workspace-pane-scaler (between wallpaper and
+ * .workspace-pane-windows) so app windows cover it without hiding the
+ * desktop wallpaper or swapping wallpapers when leaving overview.
+ */
 
 .layout-chooser {
   position: absolute;
-  top: calc(var(--panel-height) + 16px);
+  /* Scaler is already the work area (below the top panel) */
+  top: 16px;
   right: 16px;
-  z-index: 95;
+  /* Above .workspace-pane-bg (0), below .workspace-pane-windows (2) */
+  z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1382,6 +1396,14 @@ html[data-night-light="on"] .night-light-overlay::after {
   pointer-events: auto;
   opacity: 0.45;
   transition: opacity var(--transition);
+}
+
+/* Not part of GNOME overview chrome — hide while strip cards are visible */
+.desktop.overview-open .layout-chooser,
+.desktop.overview-animating .layout-chooser {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
 }
 
 .layout-chooser:hover,
@@ -4113,7 +4135,7 @@ html.reduced-motion .quick-settings {
   }
 
   .layout-chooser {
-    top: calc(var(--panel-height) + 8px);
+    top: 8px;
     right: 8px;
     transform: scale(0.9);
     transform-origin: top right;
