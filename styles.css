@@ -69,6 +69,23 @@ html[data-theme="dark"] {
   --win-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
   /* Symbolic icons inside app windows */
   --win-sym-filter: brightness(0) invert(1);
+
+  /* System cursor: Adwaita @ 24px (gsettings on this machine) */
+  --cursor-default: url("assets/cursors/default.png") 3 1, default;
+  --cursor-pointer: url("assets/cursors/pointer.png") 7 5, pointer;
+  --cursor-text: url("assets/cursors/text.png") 11 12, text;
+  --cursor-wait: url("assets/cursors/wait.png") 11 11, wait;
+  --cursor-progress: url("assets/cursors/progress.png") 3 1, progress;
+  --cursor-move: url("assets/cursors/move.png") 11 11, move;
+  --cursor-grab: url("assets/cursors/grab.png") 11 2, grab;
+  --cursor-grabbing: url("assets/cursors/grabbing.png") 9 5, grabbing;
+  --cursor-ns-resize: url("assets/cursors/ns-resize.png") 12 13, ns-resize;
+  --cursor-ew-resize: url("assets/cursors/ew-resize.png") 12 12, ew-resize;
+  --cursor-nwse-resize: url("assets/cursors/nwse-resize.png") 11 11, nwse-resize;
+  --cursor-nesw-resize: url("assets/cursors/nesw-resize.png") 11 11, nesw-resize;
+  --cursor-not-allowed: url("assets/cursors/not-allowed.png") 12 12, not-allowed;
+  --cursor-help: url("assets/cursors/help.png") 12 21, help;
+  --cursor-crosshair: url("assets/cursors/crosshair.png") 11 11, crosshair;
 }
 
 html[data-theme="light"] {
@@ -130,6 +147,13 @@ body {
   -webkit-font-smoothing: antialiased;
   user-select: none;
   transition: color 200ms ease, background-color 200ms ease;
+  cursor: var(--cursor-default);
+}
+
+/* Adwaita arrow only (match system; no hand pointer override) */
+.desktop,
+.desktop * {
+  cursor: var(--cursor-default) !important;
 }
 
 button,
@@ -141,7 +165,7 @@ button {
   border: none;
   background: none;
   color: inherit;
-  cursor: pointer;
+  cursor: var(--cursor-default);
   padding: 0;
 }
 
