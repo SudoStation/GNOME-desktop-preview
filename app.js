@@ -6,7 +6,7 @@
 const APPS = [
   {
     id: "software",
-    name: "App Center",
+    name: "Software",
     icon: "assets/apps/org.gnome.Software.png",
   },
   {
@@ -1048,12 +1048,17 @@ document.querySelector(".app-menu-content")?.addEventListener("click", (e) => {
 
 // Click outside closes shell panels (not app windows)
 document.addEventListener("click", () => {
+  if (typeof startOverlay !== "undefined" && startOverlay && !startOverlay.hidden) return;
   closeAll();
 });
 
 // Keyboard
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
+    if (typeof startOverlay !== "undefined" && startOverlay && !startOverlay.hidden) {
+      /* Keep overlay until they choose fullscreen or continue */
+      return;
+    }
     if (!powerMenu.hidden) {
       powerMenu.hidden = true;
       return;
@@ -5001,7 +5006,7 @@ const SW_SYSTEM_INSTALLED = [
   },
   {
     id: "system.software",
-    name: "App Center",
+    name: "Software",
     summary: "Install and update apps",
     icon: "assets/apps/org.gnome.Software.png",
     source: "System",
@@ -5817,7 +5822,7 @@ swMenu?.addEventListener("click", (e) => {
   if (item.dataset.swAction === "repos") {
     showSoftwareToast("Software Repositories — Flathub is enabled");
   } else if (item.dataset.swAction === "about") {
-    showSoftwareToast("App Center · Flathub preview");
+    showSoftwareToast("Software · Flathub preview");
   }
 });
 
@@ -5829,6 +5834,47 @@ softwareWindow?.addEventListener("click", (e) => {
     swMenu.hidden = true;
   }
 });
+
+/* ---------- Start overlay / fullscreen ---------- */
+
+const startOverlay = document.getElementById("start-overlay");
+const startFullscreenBtn = document.getElementById("start-fullscreen-btn");
+const startSkipBtn = document.getElementById("start-skip-btn");
+
+function dismissStartOverlay() {
+  if (startOverlay) startOverlay.hidden = true;
+}
+
+async function enterFullscreenPreview() {
+  const target = document.documentElement;
+  try {
+    if (target.requestFullscreen) await target.requestFullscreen();
+    else if (target.webkitRequestFullscreen) await target.webkitRequestFullscreen();
+    else if (target.msRequestFullscreen) await target.msRequestFullscreen();
+  } catch {
+    /* Browser denied or unsupported — still enter the mockup */
+  }
+  dismissStartOverlay();
+}
+
+if (startFullscreenBtn) {
+  startFullscreenBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    enterFullscreenPreview();
+  });
+}
+
+if (startSkipBtn) {
+  startSkipBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    dismissStartOverlay();
+  });
+}
+
+if (startOverlay) {
+  startOverlay.addEventListener("click", (e) => e.stopPropagation());
+  startOverlay.querySelector(".start-overlay-card")?.addEventListener("click", (e) => e.stopPropagation());
+}
 
 /* Boot workspace layer (must run after DOM + nautilus node exist) */
 initWorkspaces();

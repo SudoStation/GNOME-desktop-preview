@@ -14,10 +14,8 @@ Interactive browser mockup of a GNOME Shell desktop. Static HTML/CSS/JS — no b
 ### Things to try
 - Switch between panel and dock layout.
 - Open app menu
-- Open the App Center, open an app page, click install/uninstall
+- Open Software (App Center)
 - Switch workspaces
 - Open file manager
-- Open notifications panel
-- Open quick settings panel
 - Open settings app
 - Switch between light/dark mode

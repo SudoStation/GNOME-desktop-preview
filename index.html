@@ -11,6 +11,37 @@
   <link href="https://fonts.googleapis.com/css2?family=Cantarell:wght@400;500;700&display=swap" rel="stylesheet" />
 </head>
 <body>
+  <!-- Start overlay: things to try + fullscreen (must be user-activated) -->
+  <div class="start-overlay" id="start-overlay" role="dialog" aria-modal="true" aria-labelledby="start-overlay-title">
+    <div class="start-overlay-card">
+      <div class="start-overlay-brand">
+        <img src="docs/favicon/GNOME.png" alt="" class="start-overlay-logo" draggable="false" />
+        <div>
+          <h1 class="start-overlay-heading" id="start-overlay-title">GNOME Desktop Preview</h1>
+          <p class="start-overlay-sub">GNOME Shell + Blur my Shell & Dash to Dock</p>
+        </div>
+      </div>
+
+      <h2 class="start-overlay-section">Things to try</h2>
+      <ul class="start-overlay-list">
+        <li>Switch between panel and dock layout.</li>
+        <li>Open app menu</li>
+        <li>Open Software (App Center)</li>
+        <li>Switch workspaces</li>
+        <li>Open file manager</li>
+        <li>Open settings app</li>
+        <li>Switch between light/dark mode</li>
+      </ul>
+
+      <button type="button" class="start-overlay-btn" id="start-fullscreen-btn">
+        Go fullscreen
+      </button>
+      <button type="button" class="start-overlay-skip" id="start-skip-btn">
+        Continue without fullscreen
+      </button>
+    </div>
+  </div>
+
   <div id="desktop" class="desktop layout-dash" data-layout="dash" aria-label="GNOME desktop preview">
     <!-- Fallback wallpaper (visible under overview scrim / empty chrome) -->
     <div class="wallpaper wallpaper-root" role="presentation" aria-hidden="true"></div>
@@ -445,7 +476,7 @@
       header switcher (Explore · Installed · Updates), featured carousel,
       category tiles, summary tiles, app details with Install progress.
     -->
-    <div class="software-window" id="software-window" role="dialog" aria-label="App Center" hidden data-workspace="0">
+    <div class="software-window" id="software-window" role="dialog" aria-label="Software" hidden data-workspace="0">
       <!-- Main shell (Explore / Installed / Updates / Search) -->
       <div class="sw-shell" id="sw-shell">
         <header class="sw-header">
@@ -453,7 +484,7 @@
             <img class="sym" src="assets/actions/search-symbolic.svg" alt="" draggable="false" />
           </button>
 
-          <nav class="sw-switcher" id="sw-switcher" role="tablist" aria-label="App Center sections">
+          <nav class="sw-switcher" id="sw-switcher" role="tablist" aria-label="Software sections">
             <button type="button" class="sw-switcher-btn active" role="tab" aria-selected="true" data-sw-tab="explore">
               <img class="sym" src="assets/software/software-explore-symbolic.svg" alt="" draggable="false" />
               <span>Explore</span>
@@ -485,7 +516,7 @@
 
         <div class="sw-menu" id="sw-menu" role="menu" hidden>
           <button type="button" class="sw-menu-item" role="menuitem" data-sw-action="repos">Software Repositories</button>
-          <button type="button" class="sw-menu-item" role="menuitem" data-sw-action="about">About App Center</button>
+          <button type="button" class="sw-menu-item" role="menuitem" data-sw-action="about">About Software</button>
         </div>
 
         <div class="sw-body" id="sw-body">
